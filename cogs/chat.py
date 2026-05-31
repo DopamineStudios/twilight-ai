@@ -470,17 +470,24 @@ class AICog(commands.Cog):
         if identifier not in self.message_history or not self.message_history[identifier]:
             return
 
+        count_config = None
+        if hasattr(gen_config, 'system_instruction') and gen_config.system_instruction:
+            count_config = types.CountTokensConfig(
+                system_instruction=gen_config.system_instruction
+            )
+
         while True:
             try:
                 current_context = self._prepare_search_context(self.message_history[identifier])
                 token_count_resp = client.models.count_tokens(
                     model=active_model_name,
                     contents=current_context,
-                    config=gen_config
+                    config=count_config
                 )
                 if token_count_resp.total_tokens <= max_tokens:
                     break
-            except Exception:
+            except Exception as e:
+                print(f"Token counting error: {e}")
                 if len(self.message_history[identifier]) <= 2:
                     break
 
