@@ -497,6 +497,105 @@ class AICog(commands.Cog):
             else:
                 break
 
+    def clean_math_string(self, val: str) -> str:
+        if not val:
+            return val
+        val = re.sub(
+            r'\\frac\{([^{}]+)\}\{([^{}]+)\}',
+            lambda m: f"{m.group(1)}/{m.group(2)}" if len(m.group(1)) == 1 and len(
+                m.group(2)) == 1 else f"({m.group(1)})/({m.group(2)})",
+            val
+        )
+
+        for _ in range(2):
+            val = re.sub(r'\\(?:mathbf|mathrm|text|boldsymbol|mathit|cal|mathbb|mathscr)\{([^{}]+)\}', r'\1', val)
+
+        replacements = {
+            r'\cos': 'cos', r'\sin': 'sin', r'\tan': 'tan', r'\det': 'det',
+            r'\cdot': ' · ', r'\times': ' × ', r'\approx': '≈',
+            r'\quad': ' ', r'\qquad': '  ',
+            r'\theta': 'θ', r'\alpha': 'α', r'\beta': 'β', r'\gamma': 'γ',
+            r'\pi': 'π', r'\phi': 'φ', r'\psi': 'ψ', r'\omega': 'ω',
+            r'\sigma': 'σ', r'\lambda': 'λ', r'\pm': '±', r'\neq': '≠',
+            r'\le': '≤', r'\ge': '≥', r'\infty': '∞',
+        }
+        for latex, uni in replacements.items():
+            val = val.replace(latex, uni)
+
+        try:
+            val = unicodeitplus.convert(val)
+        except Exception:
+            pass
+
+        val = re.sub(r'\\[a-zA-Z]+\{([^{}]*)\}', r'\1', val)
+        val = re.sub(r'\\[a-zA-Z]+', '', val)
+
+        val = re.sub(r'\s*=\s*', ' = ', val)
+        val = re.sub(r'\s*\+\s*', ' + ', val)
+        val = re.sub(r'\s*≈\s*', ' ≈ ', val)
+
+        superscript_map = {
+            '0': '⁰', '1': '¹', '2': '²', '3': '³', '4': '⁴',
+            '5': '⁵', '6': '⁶', '7': '⁷', '8': '⁸', '9': '⁹',
+            'T': 'ᵀ', 'n': 'ⁿ', 'x': 'ˣ', 'y': 'ʸ', 'i': 'ⁱ',
+            'j': 'ʲ', '+': '⁺', '-': '⁻', 'θ': 'ᶿ', 'α': 'ᵃ',
+            'β': 'ᵝ', 'γ': 'ᵞ', '(': '⁽', ')': '⁾', '=': '⁼'
+        }
+
+        val = re.sub(
+            r'\^(?:\{([^}]+)\}|\(([^)]+)\)|([0-9Tnxyeij+\-θαβγ()=]))',
+            lambda m: "".join(superscript_map.get(char, char) for char in (m.group(1) or m.group(2) or m.group(3))),
+            val
+        )
+
+        val = val.replace('{}', '')
+
+        return val.strip()
+
+    def format_matrix(self, env_type: str, body_content: str) -> list:
+        raw_rows = body_content.split(r'\\')
+        grid = []
+        for r in raw_rows:
+            if not r.strip() and len(raw_rows) > 1:
+                continue
+            raw_cols = r.split('&')
+            clean_cols = [self.clean_math_string(c) for c in raw_cols]
+            grid.append(clean_cols)
+
+        if not grid or not grid[0]:
+            return [""]
+
+        max_cols = max(len(row) for row in grid)
+        for row in grid:
+            while len(row) < max_cols:
+                row.append("")
+
+        col_widths = [0] * max_cols
+        for row in grid:
+            for idx, cell in enumerate(row):
+                if len(cell) > col_widths[idx]:
+                    col_widths[idx] = len(cell)
+
+        formatted_rows = []
+        for row in grid:
+            formatted_cells = []
+            for idx, cell in enumerate(row):
+                padded = cell.ljust(col_widths[idx])
+                formatted_cells.append(padded)
+            formatted_rows.append("  ".join(formatted_cells))
+
+        left_bracket, right_bracket = "", ""
+        if "vmatrix" in env_type:
+            left_bracket, right_bracket = "| ", " |"
+        elif "pmatrix" in env_type:
+            left_bracket, right_bracket = "( ", " )"
+        elif "bmatrix" in env_type:
+            left_bracket, right_bracket = "[ ", " ]"
+
+        if left_bracket or right_bracket:
+            return [f"{left_bracket}{row}{right_bracket}" for row in formatted_rows]
+        return formatted_rows
+
     def _clean_latex(self, text: str) -> str:
         if not text:
             return text
@@ -507,43 +606,120 @@ class AICog(commands.Cog):
             code_blocks.append(match.group(0))
             return f"__CODE_BLOCK_PLACEHOLDER_{len(code_blocks) - 1}__"
 
-        protected_text = re.sub(r'```[\s\S]*?```', placeholder_code, text)
+        current_text = re.sub(r'```[\s\S]*?```', placeholder_code, text)
 
-        def process_display_math(match):
-            math_content = match.group(1).strip()
+        display_math_blocks = []
 
-            math_content = re.sub(r'\\(begin|end)\{[a-zA-Z]*?\*?\}', '', math_content)
-            math_content = re.sub(r'\{[crl\s|]+\}', '', math_content)
+        def placeholder_display(match):
+            display_math_blocks.append(match.group(1))
+            return f"__DISPLAY_MATH_PLACEHOLDER_{len(display_math_blocks) - 1}__"
 
-            math_content = math_content.replace(r'\\', '\n')
-            math_content = math_content.replace('&', '    ')
+        current_text = re.sub(r'\$\$([\s\S]*?)\$\$', placeholder_display, current_text)
 
-            try:
-                converted = unicodeitplus.convert(math_content)
-                return f"\n```text\n{converted.strip()}\n```\n"
-            except Exception:
-                return f"\n```text\n{math_content.strip()}\n```\n"
+        inline_math_blocks = []
 
-        cleaned_text = re.sub(r'\$\$([\s\S]*?)\$\$', process_display_math, protected_text)
+        def placeholder_inline(match):
+            inline_math_blocks.append(match.group(1))
+            return f"__INLINE_MATH_PLACEHOLDER_{len(inline_math_blocks) - 1}__"
 
-        def process_inline_math(match):
-            math_content = match.group(1).strip()
-            try:
-                return unicodeitplus.convert(math_content)
-            except Exception:
-                return match.group(0)
-
-        cleaned_text = re.sub(r'\$(.*?)\$', process_inline_math, cleaned_text)
+        current_text = re.sub(r'\$(.*?)\$', placeholder_inline, current_text)
 
         try:
-            cleaned_text = LatexNodes2Text(keep_comments=True).latex_to_text(cleaned_text)
+            current_text = LatexNodes2Text(keep_comments=True).latex_to_text(current_text)
         except Exception:
             pass
 
-        for i, block in enumerate(code_blocks):
-            cleaned_text = cleaned_text.replace(f"__CODE_BLOCK_PLACEHOLDER_{i}__", block)
+        for i, raw_content in enumerate(display_math_blocks):
+            math_content = raw_content.strip()
 
-        return cleaned_text
+            math_content = re.sub(r'\\(left|right)[()\[\]|.\\]', '', math_content)
+            math_content = re.sub(r'\{[crl\s|]+\}', '', math_content)
+
+            matrix_matches = list(re.finditer(r'\\begin\{([a-zA-Z]*?)\}([\s\S]*?)\\end\{\1\}', math_content))
+            if not matrix_matches and (r'\\' in math_content or '&' in math_content):
+                if '=' in math_content:
+                    prefix, matrix_part = math_content.split('=', 1)
+                    math_content = f"{prefix} = \\begin{{matrix}}{matrix_part}\\end{{matrix}}"
+                else:
+                    math_content = f"\\begin{{matrix}}{math_content}\\end{{matrix}}"
+
+            matrix_storage = {}
+            matrix_counter = [0]
+
+            def matrix_subber(m):
+                env_type = m.group(1)
+                body = m.group(2)
+                idx = matrix_counter[0]
+                matrix_counter[0] += 1
+
+                formatted_lines = self.format_matrix(env_type, body)
+                key = f"__MATRIX_BLOCK_{idx}__"
+                matrix_storage[key] = formatted_lines
+                return key
+
+            replaced_math = re.sub(r'\\begin\{([a-zA-Z]*?)\}([\s\S]*?)\\end\{\1\}', matrix_subber, math_content)
+            top_lines = replaced_math.split(r'\\')
+            final_block_lines = []
+
+            for line in top_lines:
+                if not line.strip():
+                    continue
+
+                tokens = re.split(r'(__MATRIX_BLOCK_\d+__)', line)
+                blocks_in_line = []
+
+                for token in tokens:
+                    if not token:
+                        continue
+                    if token in matrix_storage:
+                        blocks_in_line.append(matrix_storage[token])
+                    else:
+                        cleaned_piece = self.clean_math_string(token)
+                        if cleaned_piece:
+                            blocks_in_line.append([cleaned_piece])
+
+                if not blocks_in_line:
+                    continue
+
+                max_h = max(len(b) for b in blocks_in_line)
+                padded_blocks = []
+
+                for b in blocks_in_line:
+                    w = max(len(line_str) for line_str in b) if b else 0
+                    total_pad = max_h - len(b)
+                    top_pad = total_pad // 2
+                    bottom_pad = total_pad - top_pad
+
+                    pb = []
+                    for _ in range(top_pad):
+                        pb.append(" " * w)
+                    for line_str in b:
+                        pb.append(line_str.ljust(w))
+                    for _ in range(bottom_pad):
+                        pb.append(" " * w)
+                    padded_blocks.append(pb)
+
+                for h_idx in range(max_h):
+                    combined_row = ""
+                    for b_idx in range(len(padded_blocks)):
+                        part = padded_blocks[b_idx][h_idx]
+                        if b_idx > 0:
+                            combined_row += " "
+                        combined_row += part
+                    final_block_lines.append(combined_row)
+
+            final_math_display = "\n".join(final_block_lines)
+            wrapped_block = f"\n```text\n{final_math_display}\n```\n"
+            current_text = current_text.replace(f"__DISPLAY_MATH_PLACEHOLDER_{i}__", wrapped_block)
+
+        for i, raw_content in enumerate(inline_math_blocks):
+            final_inline = self.clean_math_string(raw_content)
+            current_text = current_text.replace(f"__INLINE_MATH_PLACEHOLDER_{i}__", final_inline)
+
+        for i, block in enumerate(code_blocks):
+            current_text = current_text.replace(f"__CODE_BLOCK_PLACEHOLDER_{i}__", block)
+
+        return current_text
 
     def _replace_markdown_separators(self, text: str) -> str:
         if not text:
