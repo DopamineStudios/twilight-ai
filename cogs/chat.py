@@ -291,8 +291,8 @@ class AICog(commands.Cog):
         self.message_history = {}
         self.last_activity = {}
         self.cooldowns = {}
-        self.loading_icon = "<a:TWILIGHT_LOADING_ICON:1506347831605198981>"
-        self.loading_dot = "<a:TWILIGHT_LOADING_DOT:1506348237722878085>"
+        self.loading_icon = "<a:twilight_loading_icon:1506347831605198981>"
+        self.loading_dot = "<a:twilight_loading_dot:1506348237722878085>"
         self.google_emoji = "GOOGLE"
 
         self.chat_locks = {}
@@ -439,7 +439,7 @@ class AICog(commands.Cog):
                     break
 
                 try:
-                    await message.edit(content=f"## {self.loading_icon} {pick}\n\n𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖\n\n{self.loading_dot}")
+                    await message.edit(content=f"## {self.loading_icon} {pick}")
                 except discord.NotFound:
                     break
 
@@ -763,24 +763,24 @@ class AICog(commands.Cog):
         embeds = []
 
         if len(text) <= 2000:
-            content = f"## {loading_prefix} Just a sec...\n\n𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖\n\n{text}{self.loading_dot}" if loading_prefix else text
+            content = f"## {loading_prefix} Just a sec...\n\n{text} {self.loading_dot}" if loading_prefix else text
 
         elif len(text) <= 4000:
             embed = discord.Embed(
-                description=f"## {loading_prefix} Just a sec...\n\n𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖\n\n" + text + f"{self.loading_dot}" if loading_prefix else text,
+                description=f"## {loading_prefix} Just a sec...\n\n" + text + f"{self.loading_dot}" if loading_prefix else text,
                 colour=color)
             embeds.append(embed)
 
         elif len(text) <= 6000:
             e1 = discord.Embed(
-                description=f"## {loading_prefix} Just a sec...\n\n𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖\n\n" + text[:4000] + f"{self.loading_dot}" if loading_prefix else text[
+                description=f"## {loading_prefix} Just a sec...\n\n" + text[:4000] + f"{self.loading_dot}" if loading_prefix else text[
                     :4000], colour=color)
             e2 = discord.Embed(description=text[4000:], colour=color)
             embeds = [e1, e2]
 
         else:
             content = text[:2000]
-            if loading_prefix: content = f"## {loading_prefix} Just a sec...\n\n𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖\n\n{content}{self.loading_dot}"
+            if loading_prefix: content = f"## {loading_prefix} Just a sec...\n\n{content} {self.loading_dot}"
 
             e1 = discord.Embed(description=text[2000:6000], colour=color)
             e2 = discord.Embed(description=text[6000:], colour=color)
@@ -1084,7 +1084,7 @@ User prompt:
         if not prompt and not message.attachments:
             return
 
-        queue_msg = await message.reply(f"## {self.loading_icon} Just a sec...\n\n𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖\n\n{self.loading_dot}", mention_author=False)
+        queue_msg = await message.reply(f"## {self.loading_icon} Just a sec...\n\n", mention_author=False)
         stop_event = asyncio.Event()
         worker_task = asyncio.create_task(self._personality_worker(queue_msg, stop_event, mode=0))
 
@@ -1136,7 +1136,7 @@ User prompt:
                             print(e)
                         target_tier = 'C'
 
-                        await queue_msg.edit(content=f"## {self.loading_icon} Analysing...\n\n𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖\n\n{self.loading_dot}")
+                        await queue_msg.edit(content=f"## {self.loading_icon} Analysing...")
                         image_analysis = True
                         stop_event = asyncio.Event()
                         worker_task = asyncio.create_task(self._personality_worker(queue_msg, stop_event, mode=3))
@@ -1153,7 +1153,7 @@ User prompt:
                 if target_tier == 'D':
                     current_model = "Google Gemma 4 31B"
                     config_kwargs["tools"] = [types.Tool(google_search=types.GoogleSearch())]
-                    await queue_msg.edit(content=f"## {self.loading_icon} Using Google Search...\n\n𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖\n\n{self.loading_dot}")
+                    await queue_msg.edit(content=f"## {self.loading_icon} Using Google Search...")
                     stop_event = asyncio.Event()
                     worker_task = asyncio.create_task(self._personality_worker(queue_msg, stop_event, mode=1))
                 elif target_tier in ['B', 'C']:
@@ -1220,7 +1220,7 @@ User prompt:
                                     if current_step != last_thinking_step:
                                         last_thinking_step = current_step
                                         try:
-                                            await queue_msg.edit(content=f"## {self.loading_icon} {current_step}\n\n𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖\n\n{self.loading_dot}")
+                                            await queue_msg.edit(content=f"## {self.loading_icon} {current_step}")
                                         except discord.NotFound:
                                             break
                                         except discord.HTTPException:
