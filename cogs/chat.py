@@ -509,18 +509,31 @@ class AICog(commands.Cog):
 
         protected_text = re.sub(r'```[\s\S]*?```', placeholder_code, text)
 
-        protected_text = protected_text.replace(r'\\', '\n')
-        protected_text = protected_text.replace('&', '   ')
+        def process_display_math(match):
+            math_content = match.group(1).strip()
 
-        def process_math_match(match):
+            math_content = re.sub(r'\\(begin|end)\{[a-zA-Z]*?\*?\}', '', math_content)
+            math_content = re.sub(r'\{[crl\s|]+\}', '', math_content)
+
+            math_content = math_content.replace(r'\\', '\n')
+            math_content = math_content.replace('&', '    ')
+
+            try:
+                converted = unicodeitplus.convert(math_content)
+                return f"\n```text\n{converted.strip()}\n```\n"
+            except Exception:
+                return f"\n```text\n{math_content.strip()}\n```\n"
+
+        cleaned_text = re.sub(r'\$\$([\s\S]*?)\$\$', process_display_math, protected_text)
+
+        def process_inline_math(match):
             math_content = match.group(1).strip()
             try:
                 return unicodeitplus.convert(math_content)
             except Exception:
                 return match.group(0)
 
-        cleaned_text = re.sub(r'\$\$(.*?)\$\$', process_math_match, protected_text)
-        cleaned_text = re.sub(r'\$(.*?)\$', process_math_match, cleaned_text)
+        cleaned_text = re.sub(r'\$(.*?)\$', process_inline_math, cleaned_text)
 
         try:
             cleaned_text = LatexNodes2Text(keep_comments=True).latex_to_text(cleaned_text)
