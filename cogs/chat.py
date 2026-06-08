@@ -297,13 +297,6 @@ class AICog(commands.Cog):
 
         self.chat_locks = {}
 
-    def _fix_discord_headings(self, text: str) -> str:
-        """Converts level 4 headings (####) to level 3 (###) for Discord compatibility."""
-        if not text:
-            return text
-        # This looks for '####' at the start of any line followed by whitespace
-        return re.sub(r'^####\s+', '### ', text, flags=re.MULTILINE)
-
     async def _personality_worker(self, message: discord.Message, stop_event: asyncio.Event, mode: int = 0):
         try:
             await asyncio.wait_for(stop_event.wait(), timeout=5.0)
@@ -754,7 +747,6 @@ class AICog(commands.Cog):
 
     def _format_response_payload(self, text, is_final=False, used_search=False):
         text = self._replace_markdown_separators(text)
-        text = self._fix_discord_headings(text)
         if is_final:
             text = self._clean_latex(text)
 
@@ -1291,6 +1283,9 @@ User prompt:
                                 contents=current_context,
                                 config=gen_config
                             )
+                            async for chunk in response:
+                                if chunk.text:
+                                    full_content += chunk.text
                             break
                         else:
                             await queue_msg.edit(content="I'm having trouble reaching the servers! This is usually a problem on Google's end. Please try again in a few seconds.")
