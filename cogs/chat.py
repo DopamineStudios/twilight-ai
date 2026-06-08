@@ -912,7 +912,7 @@ class AICog(commands.Cog):
             try:
                 if m_type == "user":
                     user = guild.get_member(int(m_id)) or await guild.fetch_member(int(m_id))
-                    user_mention_type = "You, i.e. Twilight" if user =- self.bot.user or "A Discord Bot" if user.bot else "A Normal Non-Bot Discord User/Member"
+                    user_mention_type = "You, i.e. Twilight" if user == self.bot.user else "A Discord Bot" if user.bot else "A Normal Non-Bot Discord User/Member"
                     replacement = f"@{user.display_name} (System detects that the user has written a Discord mention here, mentioning a Discord user. The type of the user is: {user_mention_type})" if user else text[start:end]
 
                 elif m_type == "channel":
