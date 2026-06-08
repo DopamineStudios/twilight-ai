@@ -465,25 +465,33 @@ class AICog(commands.Cog):
         if identifier not in self.message_history:
             self.message_history[identifier] = []
 
-    def _trim_to_tokens(self, identifier, active_model_name, gen_config,
-                        max_tokens: int):
+    async def _trim_to_tokens(self, identifier, active_model_name, gen_config, max_tokens: int):
+        # Safely fetch the user to avoid NoneType error
+
         if identifier not in self.message_history or not self.message_history[identifier]:
             return
 
-        count_config = None
-        if hasattr(gen_config, 'system_instruction') and gen_config.system_instruction:
-            count_config = types.CountTokensConfig(
-                system_instruction=gen_config.system_instruction
-            )
-
         while True:
+            count = random.randint(1, 1000)
             try:
+                # Prepare the normal conversation history context
                 current_context = self._prepare_search_context(self.message_history[identifier])
+
+                # If a system instruction exists, manually inject it into the contents list
+                if hasattr(gen_config, 'system_instruction') and gen_config.system_instruction:
+                    system_content = types.Content(
+                        role="system",
+                        parts=[types.Part(text=gen_config.system_instruction)]
+                    )
+                    current_context = [system_content] + current_context
+
+                # Note: If this SDK call is blocking, consider running it in an executor,
+                # or use an async variant if the Google GenAI SDK provides one.
                 token_count_resp = client.models.count_tokens(
                     model=active_model_name,
-                    contents=current_context,
-                    config=count_config
+                    contents=current_context
                 )
+
                 if token_count_resp.total_tokens <= max_tokens:
                     break
             except Exception as e:
@@ -1304,9 +1312,9 @@ User prompt:
                         contents=uploaded_files + [types.Part(
                             text="Describe this image or file in one concise sentence for conversation history context for an AI.")]
                     )
-                    image_context_text = f"\n*[Context: User uploaded an image or file showing: {desc_resp.text.strip()}]*"
+                    image_context_text = f"\n*[System Context: User uploaded an image or file showing: {desc_resp.text.strip()}]*"
                 except Exception:
-                    image_context_text = "\n*[Context: User uploaded an image or file]*"
+                    image_context_text = "\n*[System Context: User uploaded an image or file but system has failed to generate a description for it]*"
             else:
                 image_context_text = ""
 
@@ -1317,7 +1325,7 @@ User prompt:
             self.message_history[identifier].append(
                 types.Content(role="model", parts=[types.Part(text=self._replace_markdown_separators(full_content))])
             )
-            self._trim_to_tokens(identifier, active_model_name, gen_config, max_tokens=128000)
+            await self._trim_to_tokens(identifier, active_model_name, gen_config, max_tokens=128000)
 
             generation_time = time.time() - start_time
             self.cooldowns[identifier] = (time.time(), (generation_time * 0.3) + 10.5)
