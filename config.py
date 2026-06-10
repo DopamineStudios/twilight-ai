@@ -19,7 +19,7 @@ gemini_api_key = os.getenv("GEMINI_API_KEY", None)
 BASE_DIR = Path(__file__).resolve().parent
 
 # Database paths
-prompt = str(BASE_DIR / "databases" / "prompt.txt")
+prompt = str(BASE_DIR / "prompts" / "prompt.txt")
 with open(prompt, "r", encoding="utf-8") as f:
     system_prompt = f.read().strip()
 
