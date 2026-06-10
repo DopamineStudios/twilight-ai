@@ -41,7 +41,7 @@ intents.dm_messages = True
 
 allowed_mentions = discord.AllowedMentions(replied_user=False)
 
-bot = Bot(command_prefix="!", intents=intents, minimal_cacheing=True, allowed_mentions=allowed_mentions, accent_colour=discord.Colour(0xbd6869))
+bot = Bot(command_prefix="!", intents=intents, minimal_cacheing=True, allowed_mentions=allowed_mentions, version_file="VERSION.txt", accent_colour=discord.Colour(0xbd6869))
 
 if __name__ == "__main__":
     async def main_async():
