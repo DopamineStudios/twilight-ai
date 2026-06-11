@@ -1111,6 +1111,7 @@ User prompt:
         current_model = None
 
         try:
+            start_generation_time = time.time()
             try:
                 self._manage_history(identifier)
 
@@ -1261,6 +1262,7 @@ User prompt:
                             full_content += "\n\n> Sources: " + " | ".join(unique_cites)
 
                         if full_content:
+                            total_generation_time = f"{time.time() - start_generation_time:.1f}s"
                             content, embeds = self._format_response_payload(full_content, is_final=True,
                                                                             used_search=used_search)
                             view = discord.ui.View()
