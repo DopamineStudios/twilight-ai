@@ -37,11 +37,62 @@ IMAGE_MEDIA_PATTERNS = [
     r"i\.giphy\.com"
 ]
 
-class SearchButton(discord.ui.View):
-    def __init__(self, query: str):
-        super().__init__()
-        url = f"https://www.google.com/search?q={discord.utils.escape_markdown(query).replace(' ', '+')}"
-        self.add_item(discord.ui.Button(label=f'Search on Google: "{query}"', url=url))
+class MainResponseView(discord.ui.View):
+    def __init__(self, response_time_str: str, retry_emoji_str: str, threedot_emoji_str: str):
+        super().__init__(timeout=None)
+
+        self.add_item(discord.ui.Button(
+            label=response_time_str,
+            style=discord.ButtonStyle.secondary,
+            disabled=True,
+            row=0
+        ))
+
+        self.add_item(discord.ui.Button(
+            label="Retry",
+            style=discord.ButtonStyle.secondary,
+            emoji=discord.PartialEmoji.from_str(retry_emoji_str),
+            row=0
+        ))
+
+        self.add_item(discord.ui.Button(
+            style=discord.ButtonStyle.secondary,
+            emoji=discord.PartialEmoji.from_str(threedot_emoji_str),
+            row=0
+        ))
+
+
+class OverflowButtonView(discord.ui.View):
+    def __init__(self, model_name: str, context_percent: str, token_format: str, back_emoji_str: str, report_emoji_str: str):
+        super().__init__(timeout=None)
+
+        self.add_item(discord.ui.Button(
+            label="Back",
+            style=discord.ButtonStyle.secondary,
+            emoji=discord.PartialEmoji.from_str(back_emoji_str),
+            row=0
+        ))
+        self.add_item(discord.ui.Button(
+            label="Report Response",
+            style=discord.ButtonStyle.danger,
+            emoji=discord.PartialEmoji.from_str(report_emoji_str),
+            row=1
+        ))
+        self.add_item(discord.ui.Button(
+            label="Show Thinking Process",
+            style=discord.ButtonStyle.secondary,
+            row=1
+        ))
+
+        self.add_item(
+            discord.ui.Button(label=f"Model: {model_name}", style=discord.ButtonStyle.secondary, disabled=True, row=2))
+        self.add_item(
+            discord.ui.Button(label=f"Context: {context_percent}", style=discord.ButtonStyle.secondary, disabled=True,
+                              row=2))
+        self.add_item(
+            discord.ui.Button(label=f"Tokens: {token_format}", style=discord.ButtonStyle.secondary, disabled=True,
+                              row=2))
+
 
 
 class AICog(commands.Cog):
@@ -293,6 +344,10 @@ class AICog(commands.Cog):
         self.cooldowns = {}
         self.loading_icon = "<a:twilight_loading_icon:1506347831605198981>"
         self.loading_dot = "<a:twilight_loading_dot:1506348237722878085>"
+        self.reportemoji = "<:ReportEmoji:1515283638164521031>"
+        self.threedotemoji = "<:ThreedotEmoji:1515283624088436767>"
+        self.retryemoji = "<:RetryEmoji:1515283585123483688>"
+        self.backemoji = "<:BackEmoji:1515286702787395724>"
         self.google_emoji = "GOOGLE"
 
         self.chat_locks = {}
@@ -466,7 +521,6 @@ class AICog(commands.Cog):
             self.message_history[identifier] = []
 
     async def _trim_to_tokens(self, identifier, active_model_name, gen_config, max_tokens: int):
-        # Safely fetch the user to avoid NoneType error
 
         if identifier not in self.message_history or not self.message_history[identifier]:
             return
@@ -474,10 +528,8 @@ class AICog(commands.Cog):
         while True:
             count = random.randint(1, 1000)
             try:
-                # Prepare the normal conversation history context
                 current_context = self._prepare_search_context(self.message_history[identifier])
 
-                # If a system instruction exists, manually inject it into the contents list
                 if hasattr(gen_config, 'system_instruction') and gen_config.system_instruction:
                     system_content = types.Content(
                         role="system",
@@ -485,8 +537,6 @@ class AICog(commands.Cog):
                     )
                     current_context = [system_content] + current_context
 
-                # Note: If this SDK call is blocking, consider running it in an executor,
-                # or use an async variant if the Google GenAI SDK provides one.
                 token_count_resp = client.models.count_tokens(
                     model=active_model_name,
                     contents=current_context
