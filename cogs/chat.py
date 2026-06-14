@@ -38,51 +38,74 @@ IMAGE_MEDIA_PATTERNS = [
 ]
 
 class MainResponseView(discord.ui.View):
-    def __init__(self, response_time_str: str, retry_emoji_str: str, threedot_emoji_str: str):
+    def __init__(self, bot, response_time_str: str, model_name: str, context_percent: str, token_format: str):
         super().__init__(timeout=None)
+        self.bot = bot
+        self.model_name = model_name
+        self.context_percent = context_percent
+        self.token_format = token_format
+        self.response_time_str = response_time_str
 
-        self.add_item(discord.ui.Button(
+        responsetimebutton = discord.ui.Button(
             label=response_time_str,
             style=discord.ButtonStyle.secondary,
             disabled=True,
             row=0
-        ))
+        )
+        self.add_item(responsetimebutton)
 
-        self.add_item(discord.ui.Button(
+        retrybutton = discord.ui.Button(
             label="Retry",
             style=discord.ButtonStyle.secondary,
-            emoji=discord.PartialEmoji.from_str(retry_emoji_str),
+            emoji=discord.PartialEmoji.from_str(self.bot.retryemoji),
             row=0
-        ))
+        )
+        self.add_item(retrybutton)
 
-        self.add_item(discord.ui.Button(
+        threedot_button = discord.ui.Button(
             style=discord.ButtonStyle.secondary,
-            emoji=discord.PartialEmoji.from_str(threedot_emoji_str),
+            emoji=discord.PartialEmoji.from_str(self.bot.threedotemoji),
             row=0
-        ))
+        )
+        threedot_button.callback = self.threedot_callback
+        self.add_item(threedot_button)
+
+    async def threedot_callback(self, interaction: discord.Interaction):
+        await interaction.response.edit_message(view=OverflowButtonView(self.bot, response_time_str=self.response_time_str, model_name=self.model_name, context_percent=self.context_percent, token_format=self.token_format))
 
 
 class OverflowButtonView(discord.ui.View):
-    def __init__(self, model_name: str, context_percent: str, token_format: str, back_emoji_str: str, report_emoji_str: str):
+    def __init__(self, bot, response_time_str: str, model_name: str, context_percent: str, token_format: str):
         super().__init__(timeout=None)
+        self.bot = bot
+        self.response_time_str = response_time_str
+        self.model_name = model_name
+        self.context_percent = context_percent
+        self.token_format = token_format
 
-        self.add_item(discord.ui.Button(
+        backbutton = discord.ui.Button(
             label="Back",
             style=discord.ButtonStyle.secondary,
-            emoji=discord.PartialEmoji.from_str(back_emoji_str),
+            emoji=discord.PartialEmoji.from_str(self.bot.backemoji),
             row=0
-        ))
-        self.add_item(discord.ui.Button(
+        )
+        backbutton.callback = self.back_callback
+        self.add_item(backbutton)
+
+        reportbutton = discord.ui.Button(
             label="Report Response",
             style=discord.ButtonStyle.danger,
-            emoji=discord.PartialEmoji.from_str(report_emoji_str),
+            emoji=discord.PartialEmoji.from_str(self.bot.reportemoji),
             row=1
-        ))
-        self.add_item(discord.ui.Button(
+        )
+        self.add_item(reportbutton)
+
+        thinkingbutton = discord.ui.Button(
             label="Show Thinking Process",
             style=discord.ButtonStyle.secondary,
             row=1
-        ))
+        )
+        self.add_item(thinkingbutton)
 
         self.add_item(
             discord.ui.Button(label=f"Model: {model_name}", style=discord.ButtonStyle.secondary, disabled=True, row=2))
@@ -92,6 +115,10 @@ class OverflowButtonView(discord.ui.View):
         self.add_item(
             discord.ui.Button(label=f"Tokens: {token_format}", style=discord.ButtonStyle.secondary, disabled=True,
                               row=2))
+
+    async def back_callback(self, interaction: discord.Interaction):
+        await interaction.response.edit_message(view=MainResponseView(self.bot, response_time_str=self.response_time_str, model_name=self.model_name, context_percent=self.context_percent, token_format=self.token_format))
+
 
 
 
@@ -1315,11 +1342,7 @@ User prompt:
                             total_generation_time = f"{time.time() - start_generation_time:.1f}s"
                             content, embeds = self._format_response_payload(full_content, is_final=True,
                                                                             used_search=used_search)
-                            view = discord.ui.View()
-
-                            view.add_item(discord.ui.Button(label=f"Model: {current_model}", disabled=True))
-                            if search_query:
-                                view.add_item(SearchButton(search_query))
+                            view = MainResponseView(self.bot, total_generation_time, current_model, "69%", "69/128k")
 
                             try:
                                 await queue_msg.edit(content=content, embeds=embeds, view=view)
