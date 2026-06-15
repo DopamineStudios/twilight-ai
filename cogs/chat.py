@@ -19,6 +19,7 @@ from datetime import datetime, timezone
 from pylatexenc.latex2text import LatexNodes2Text
 import unicodeitplus
 import mimetypes
+from dataclasses import dataclass
 
 client = genai.Client(api_key=gemini_api_key)
 
@@ -36,6 +37,47 @@ IMAGE_MEDIA_PATTERNS = [
     r"media\.giphy\.com",
     r"i\.giphy\.com"
 ]
+
+@dataclass
+class ResponseMetadata:
+    response_time_str: str
+    model_name: str
+    context_percent: str
+    token_format: str
+    timestamp: float
+
+
+class ResponseCache:
+    def __init__(self, ttl_seconds: int = 3600):
+        self._cache = {}
+        self.ttl = ttl_seconds
+
+    def set(self, message_id: int, response_time: str, model: str, context: str, tokens: str):
+        self._cache[message_id] = ResponseMetadata(
+            response_time_str=response_time,
+            model_name=model,
+            context_percent=context,
+            token_format=tokens,
+            timestamp=time.time()
+        )
+        self._cleanup()
+
+    def get(self, message_id: int) -> ResponseMetadata | None:
+        self._cleanup()
+        return self._cache.get(message_id)
+
+    def delete(self, message_id: int):
+        if message_id in self._cache:
+            del self._cache[message_id]
+
+    def _cleanup(self):
+        now = time.time()
+        expired_keys = [
+            k for k, v in self._cache.items()
+            if now - v.timestamp > self.ttl
+        ]
+        for k in expired_keys:
+            del self._cache[k]
 
 class MainResponseView(discord.ui.View):
     def __init__(self, bot, response_time_str: str, model_name: str, context_percent: str, token_format: str):
@@ -366,6 +408,7 @@ class AICog(commands.Cog):
 
     def __init__(self, bot):
         self.bot = bot
+        self.response_cache = ResponseCache(ttl_seconds=3600)
         self.message_history = {}
         self.last_activity = {}
         self.cooldowns = {}
