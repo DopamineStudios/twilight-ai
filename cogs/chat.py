@@ -609,7 +609,7 @@ class AICog(commands.Cog):
         token_format = f"{total_tokens}/{max_context // 1000}k"
 
         calculated_percentage = (total_tokens / max_context) * 100
-        context_percent = f"{min(100, round(calculated_percentage))}%"
+        context_percent = f"{min(100, calculated_percentage):.1f}%"
 
         return token_format, context_percent
 
