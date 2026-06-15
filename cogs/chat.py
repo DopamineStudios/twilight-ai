@@ -605,7 +605,7 @@ class AICog(commands.Cog):
         except Exception:
             total_tokens = len(prompt_text + response_text) // 4
 
-        max_context = 128000
+        max_context = 64000
         token_format = f"{total_tokens}/{max_context // 1000}k"
 
         calculated_percentage = (total_tokens / max_context) * 100
@@ -1508,7 +1508,7 @@ User prompt:
             self.message_history[identifier].append(
                 types.Content(role="model", parts=[types.Part(text=self._replace_markdown_separators(full_content))])
             )
-            await self._trim_to_tokens(identifier, active_model_name, gen_config, max_tokens=128000)
+            await self._trim_to_tokens(identifier, active_model_name, gen_config, max_tokens=64000)
 
             generation_time = time.time() - start_time
             self.cooldowns[identifier] = (time.time(), (generation_time * 0.3) + 10.5)
