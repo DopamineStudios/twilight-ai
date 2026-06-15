@@ -45,6 +45,7 @@ class ResponseMetadata:
     context_percent: str
     token_format: str
     timestamp: float
+    thinking_process: str = ""
 
 
 class ResponseCache:
@@ -52,13 +53,14 @@ class ResponseCache:
         self._cache = {}
         self.ttl = ttl_seconds
 
-    def set(self, message_id: int, response_time: str, model: str, context: str, tokens: str):
+    def set(self, message_id: int, response_time: str, model: str, context: str, tokens: str, thinking_process: str = ""):
         self._cache[message_id] = ResponseMetadata(
             response_time_str=response_time,
             model_name=model,
             context_percent=context,
             token_format=tokens,
-            timestamp=time.time()
+            timestamp=time.time(),
+            thinking_process=thinking_process
         )
         self._cleanup()
 
@@ -79,90 +81,73 @@ class ResponseCache:
         for k in expired_keys:
             del self._cache[k]
 
+
 class MainResponseView(discord.ui.View):
-    def __init__(self, bot, response_time_str: str, model_name: str, context_percent: str, token_format: str):
-        super().__init__(timeout=None)
-        self.bot = bot
-        self.model_name = model_name
-        self.context_percent = context_percent
-        self.token_format = token_format
-        self.response_time_str = response_time_str
+    def __init__(self, cache, initial_time_str: str = "0.0s", timeout: float = 3600.0):
+        super().__init__(timeout=timeout)
+        self.cache = cache
+        self.children[0].label = f" {initial_time_str} "
 
-        responsetimebutton = discord.ui.Button(
-            label=response_time_str,
-            style=discord.ButtonStyle.secondary,
-            disabled=True,
-            row=0
-        )
-        self.add_item(responsetimebutton)
+    @discord.ui.button(label="0.0s", style=discord.ButtonStyle.secondary, disabled=True, row=0)
+    async def response_time(self, interaction: discord.Interaction, button: discord.ui.Button):
+        pass
 
-        retrybutton = discord.ui.Button(
-            label="Retry",
-            style=discord.ButtonStyle.secondary,
-            emoji=discord.PartialEmoji.from_str(self.bot.retryemoji),
-            row=0
-        )
-        self.add_item(retrybutton)
+    @discord.ui.button(label="Retry", style=discord.ButtonStyle.secondary, emoji="🔄", row=0)
+    async def retry(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.defer()
 
-        threedot_button = discord.ui.Button(
-            style=discord.ButtonStyle.secondary,
-            emoji=discord.PartialEmoji.from_str(self.bot.threedotemoji),
-            row=0
-        )
-        threedot_button.callback = self.threedot_callback
-        self.add_item(threedot_button)
-
-    async def threedot_callback(self, interaction: discord.Interaction):
-        await interaction.response.edit_message(view=OverflowButtonView(self.bot, response_time_str=self.response_time_str, model_name=self.model_name, context_percent=self.context_percent, token_format=self.token_format))
+    @discord.ui.button(label="⋯", style=discord.ButtonStyle.secondary, row=0)
+    async def overflow(self, interaction: discord.Interaction, button: discord.ui.Button):
+        overflow_view = OverflowButtonView(cache=self.cache)
+        overflow_view.update_layout_from_cache(interaction.message.id)
+        await interaction.response.edit_message(view=overflow_view)
 
 
 class OverflowButtonView(discord.ui.View):
-    def __init__(self, bot, response_time_str: str, model_name: str, context_percent: str, token_format: str):
-        super().__init__(timeout=None)
-        self.bot = bot
-        self.response_time_str = response_time_str
-        self.model_name = model_name
-        self.context_percent = context_percent
-        self.token_format = token_format
+    def __init__(self, cache, timeout: float = 3600.0):
+        super().__init__(timeout=timeout)
+        self.cache = cache
 
-        backbutton = discord.ui.Button(
-            label="Back",
-            style=discord.ButtonStyle.secondary,
-            emoji=discord.PartialEmoji.from_str(self.bot.backemoji),
-            row=0
-        )
-        backbutton.callback = self.back_callback
-        self.add_item(backbutton)
+    def update_layout_from_cache(self, message_id: int):
+        metadata = self.cache.get(message_id)
+        if metadata:
+            self.children[0].label = f"Context: {metadata.context_percent}"
+            self.children[1].label = f"Tokens: {metadata.token_format}"
+            if not metadata.thinking_process:
+                self.children[2].disabled = True
 
-        reportbutton = discord.ui.Button(
-            label="Report Response",
-            style=discord.ButtonStyle.danger,
-            emoji=discord.PartialEmoji.from_str(self.bot.reportemoji),
-            row=1
-        )
-        self.add_item(reportbutton)
+    @discord.ui.button(label="Context: --%", style=discord.ButtonStyle.secondary, disabled=True, row=0)
+    async def context_stat(self, interaction: discord.Interaction, button: discord.ui.Button):
+        pass
 
-        thinkingbutton = discord.ui.Button(
-            label="Show Thinking Process",
-            style=discord.ButtonStyle.secondary,
-            row=1
-        )
-        self.add_item(thinkingbutton)
+    @discord.ui.button(label="Tokens: --/--", style=discord.ButtonStyle.secondary, disabled=True, row=0)
+    async def token_stat(self, interaction: discord.Interaction, button: discord.ui.Button):
+        pass
 
-        self.add_item(
-            discord.ui.Button(label=f"Model: {model_name}", style=discord.ButtonStyle.secondary, disabled=True, row=2))
-        self.add_item(
-            discord.ui.Button(label=f"Context: {context_percent}", style=discord.ButtonStyle.secondary, disabled=True,
-                              row=2))
-        self.add_item(
-            discord.ui.Button(label=f"Tokens: {token_format}", style=discord.ButtonStyle.secondary, disabled=True,
-                              row=2))
+    @discord.ui.button(label="Show Thinking Process", style=discord.ButtonStyle.secondary, emoji="🧠", row=1)
+    async def show_thinking(self, interaction: discord.Interaction, button: discord.ui.Button):
+        metadata = self.cache.get(interaction.message.id)
+        if metadata and metadata.thinking_process:
+            await interaction.response.send_message(
+                f"🧠 **Thinking Process:**\n```\n{metadata.thinking_process}\n```",
+                ephemeral=True
+            )
+        else:
+            await interaction.response.send_message("No historical thinking process was recorded for this response.",
+                                                    ephemeral=True)
 
-    async def back_callback(self, interaction: discord.Interaction):
-        await interaction.response.edit_message(view=MainResponseView(self.bot, response_time_str=self.response_time_str, model_name=self.model_name, context_percent=self.context_percent, token_format=self.token_format))
+    @discord.ui.button(label="Report Response", style=discord.ButtonStyle.danger, emoji="⚠️", row=1)
+    async def report_response(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_message(
+            "⚠️ **Response Flagged:** This generation has been reported for internal review.", ephemeral=True)
 
+    @discord.ui.button(label="Back", style=discord.ButtonStyle.secondary, row=1)
+    async def back(self, interaction: discord.Interaction, button: discord.ui.Button):
+        metadata = self.cache.get(interaction.message.id)
+        time_str = metadata.response_time_str if metadata else "0.0s"
 
-
+        main_view = MainResponseView(cache=self.cache, initial_time_str=time_str)
+        await interaction.response.edit_message(view=main_view)
 
 class AICog(commands.Cog):
     _THINKING_STEP_RULES = [
@@ -580,6 +565,35 @@ class AICog(commands.Cog):
         if identifier not in self.chat_locks:
             self.chat_locks[identifier] = asyncio.Lock()
         return self.chat_locks[identifier]
+
+    async def _calculate_token_metrics(self, prompt_text: str, history_list: list, response_text: str) -> tuple[
+        str, str]:
+        try:
+            combined_payload = prompt_text + response_text + "".join([str(msg) for msg in history_list])
+
+            token_count_resp = client.models.count_tokens(
+                model=GENERALIST_MODEL,
+                contents=combined_payload
+            )
+            total_tokens = token_count_resp.total_tokens
+        except Exception:
+            total_tokens = len(prompt_text + response_text) // 4
+
+        max_context = 128000
+        token_format = f"{total_tokens}/{max_context // 1000}k"
+
+        calculated_percentage = (total_tokens / max_context) * 100
+        context_percent = f"{min(100, round(calculated_percentage))}%"
+
+        return token_format, context_percent
+
+    def _extract_thinking_content(self, text: str) -> tuple[str, str]:
+        thinking_match = re.search(r"<think>(.*?)</think>", text, re.DOTALL)
+        if thinking_match:
+            thinking_process = thinking_match.group(1).strip()
+            clean_text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
+            return clean_text, thinking_process
+        return text, ""
 
     def _manage_history(self, identifier):
         current_time = time.time()
@@ -1382,17 +1396,40 @@ User prompt:
                             full_content += "\n\n> Sources: " + " | ".join(unique_cites)
 
                         if full_content:
-                            total_generation_time = f"{time.time() - start_generation_time:.1f}s"
-                            content, embeds = self._format_response_payload(full_content, is_final=True,
-                                                                            used_search=used_search)
-                            view = MainResponseView(self.bot, total_generation_time, current_model, "69%", "69/128k")
+                            response_time_str = f"{time.time() - start_generation_time:.1f}s"
+
+                            extracted_thinking = full_thinking.strip()
+                            clean_display_text = full_content
+                            if not extracted_thinking:
+                                clean_display_text, extracted_thinking = self._extract_thinking_content(full_content)
+
+                            token_format, context_percent = await self._calculate_token_metrics(
+                                prompt_text=prompt,
+                                history_list=current_context,
+                                response_text=clean_display_text
+                            )
+
+                            view = MainResponseView(cache=self.response_cache, initial_time_str=response_time_str)
+
+                            content, embeds = self._format_response_payload(
+                                clean_display_text,
+                                is_final=True,
+                                used_search=used_search
+                            )
 
                             try:
                                 await queue_msg.edit(content=content, embeds=embeds, view=view)
-                                await asyncio.sleep(2)
-                                await queue_msg.edit(content=content, embeds=embeds, view=view)
                             except discord.HTTPException:
                                 await message.channel.send("Error: Response was too large to format properly.")
+
+                            self.response_cache.set(
+                                message_id=queue_msg.id,
+                                response_time=response_time_str,
+                                model=current_model or "Google Gemma 4 26B",
+                                context=context_percent,
+                                tokens=token_format,
+                                thinking_process=extracted_thinking
+                            )
                         break
 
                     except Exception as e:
