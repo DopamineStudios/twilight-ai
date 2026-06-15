@@ -20,18 +20,18 @@ from pylatexenc.latex2text import LatexNodes2Text
 import unicodeitplus
 import mimetypes
 from dataclasses import dataclass
+import io
 
 client = genai.Client(api_key=gemini_api_key)
 
-# PRODUCTION EMOJIS
-#reportemoji = "<:ReportEmoji:1515283638164521031>"
+"""PRODUCTION EMOJIS"""
+"""reportemoji = "<:ReportEmoji:1515283638164521031>"
 #threedotemoji = "<:ThreedotEmoji:1515283624088436767>"
 #retryemoji = "<:RetryEmoji:1515283585123483688>"
 #backemoji = "<:BackEmoji:1515286702787395724>"
 #twilightloading = "<a:twilight_loading_icon:1506347831605198981>"
-#loadingdot = "<a:twilight_loading_dot:1506348237722878085>"
+#loadingdot = "<a:twilight_loading_dot:1506348237722878085>"""
 
-# TEST BENCH EMOJIS
 reportemoji = "<:ReportEmoji:1516126283778756701>"
 threedotemoji = "<:ThreedotEmoji:1516126288182644940>"
 retryemoji = "<:RetryEmoji:1516126285775245352>"
@@ -145,17 +145,31 @@ class OverflowButtonView(discord.ui.View):
         await interaction.response.send_message(
             "**Response Flagged:** This generation has been reported for internal review.", ephemeral=True)
 
-    @discord.ui.button(label="Show Thinking Process", style=discord.ButtonStyle.secondary,row=1)
+    @discord.ui.button(label="Show Thinking Process", style=discord.ButtonStyle.secondary, row=1)
     async def show_thinking(self, interaction: discord.Interaction, button: discord.ui.Button):
         metadata = self.cache.get(interaction.message.id)
         if metadata and metadata.thinking_process:
+            thinking_text = metadata.thinking_process
+
+            if len(thinking_text) > 1990:
+                file_stream = io.BytesIO(thinking_text.encode('utf-8'))
+                discord_file = discord.File(fp=file_stream, filename="thinking_process.txt")
+
+                await interaction.response.send_message(
+                    "**Twilight's Thinking Process:**\n*(The thinking process was too long to display in a Discord message, so it has been attached as a file.)*",
+                    file=discord_file,
+                    ephemeral=True
+                )
+            else:
+                await interaction.response.send_message(
+                    f"**Twilight's Thinking Process:**\n\n{thinking_text}\n",
+                    ephemeral=True
+                )
+        else:
             await interaction.response.send_message(
-                f"**Thinking Process:**\n```\n{metadata.thinking_process}\n```",
+                "No historical thinking process was recorded for this response.",
                 ephemeral=True
             )
-        else:
-            await interaction.response.send_message("No historical thinking process was recorded for this response.",
-                                                    ephemeral=True)
 
     @discord.ui.button(label="Back", emoji=discord.PartialEmoji.from_str(backemoji), style=discord.ButtonStyle.secondary, row=0)
     async def back(self, interaction: discord.Interaction, button: discord.ui.Button):
