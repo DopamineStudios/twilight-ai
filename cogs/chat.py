@@ -23,6 +23,22 @@ from dataclasses import dataclass
 
 client = genai.Client(api_key=gemini_api_key)
 
+# PRODUCTION EMOJIS
+#reportemoji = "<:ReportEmoji:1515283638164521031>"
+#threedotemoji = "<:ThreedotEmoji:1515283624088436767>"
+#retryemoji = "<:RetryEmoji:1515283585123483688>"
+#backemoji = "<:BackEmoji:1515286702787395724>"
+#twilightloading = "<a:twilight_loading_icon:1506347831605198981>"
+#loadingdot = "<a:twilight_loading_dot:1506348237722878085>"
+
+# TEST BENCH EMOJIS
+reportemoji = "<:ReportEmoji:1516126283778756701>"
+threedotemoji = "<:ThreedotEmoji:1516126288182644940>"
+retryemoji = "<:RetryEmoji:1516126285775245352>"
+backemoji = "<:BackEmoji:1516126262265909388>"
+twilightloading = "<a:twilight_loading_icon:1516126476280398014>"
+loadingdot = "<a:loadingdot:1516126281719218297>"
+
 JUDGE_MODEL = "models/gemma-4-26b-a4b-it"
 GENERALIST_MODEL = "models/gemma-4-26b-a4b-it"
 EXPERT_MODEL = "models/gemma-4-26b-a4b-it"
@@ -92,11 +108,11 @@ class MainResponseView(discord.ui.View):
     async def response_time(self, interaction: discord.Interaction, button: discord.ui.Button):
         pass
 
-    @discord.ui.button(label="Retry", style=discord.ButtonStyle.secondary, emoji="🔄", row=0)
+    @discord.ui.button(label="Retry", style=discord.ButtonStyle.secondary, emoji=discord.PartialEmoji.from_str(retryemoji), row=0)
     async def retry(self, interaction: discord.Interaction, button: discord.ui.Button):
         await interaction.response.defer()
 
-    @discord.ui.button(label="⋯", style=discord.ButtonStyle.secondary, row=0)
+    @discord.ui.button(emoji=discord.PartialEmoji.from_str(threedotemoji), style=discord.ButtonStyle.secondary, row=0)
     async def overflow(self, interaction: discord.Interaction, button: discord.ui.Button):
         overflow_view = OverflowButtonView(cache=self.cache)
         overflow_view.update_layout_from_cache(interaction.message.id)
@@ -116,32 +132,32 @@ class OverflowButtonView(discord.ui.View):
             if not metadata.thinking_process:
                 self.children[2].disabled = True
 
-    @discord.ui.button(label="Context: --%", style=discord.ButtonStyle.secondary, disabled=True, row=0)
+    @discord.ui.button(label="Context: --%", style=discord.ButtonStyle.secondary, disabled=True, row=2)
     async def context_stat(self, interaction: discord.Interaction, button: discord.ui.Button):
         pass
 
-    @discord.ui.button(label="Tokens: --/--", style=discord.ButtonStyle.secondary, disabled=True, row=0)
+    @discord.ui.button(label="Tokens: --/--", style=discord.ButtonStyle.secondary, disabled=True, row=2)
     async def token_stat(self, interaction: discord.Interaction, button: discord.ui.Button):
         pass
 
-    @discord.ui.button(label="Show Thinking Process", style=discord.ButtonStyle.secondary, emoji="🧠", row=1)
+    @discord.ui.button(label="Report Response", style=discord.ButtonStyle.danger, emoji=discord.PartialEmoji.from_str(reportemoji), row=1)
+    async def report_response(self, interaction: discord.Interaction, button: discord.ui.Button):
+        await interaction.response.send_message(
+            "**Response Flagged:** This generation has been reported for internal review.", ephemeral=True)
+
+    @discord.ui.button(label="Show Thinking Process", style=discord.ButtonStyle.secondary,row=1)
     async def show_thinking(self, interaction: discord.Interaction, button: discord.ui.Button):
         metadata = self.cache.get(interaction.message.id)
         if metadata and metadata.thinking_process:
             await interaction.response.send_message(
-                f"🧠 **Thinking Process:**\n```\n{metadata.thinking_process}\n```",
+                f"**Thinking Process:**\n```\n{metadata.thinking_process}\n```",
                 ephemeral=True
             )
         else:
             await interaction.response.send_message("No historical thinking process was recorded for this response.",
                                                     ephemeral=True)
 
-    @discord.ui.button(label="Report Response", style=discord.ButtonStyle.danger, emoji="⚠️", row=1)
-    async def report_response(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_message(
-            "⚠️ **Response Flagged:** This generation has been reported for internal review.", ephemeral=True)
-
-    @discord.ui.button(label="Back", style=discord.ButtonStyle.secondary, row=1)
+    @discord.ui.button(label="Back", emoji=discord.PartialEmoji.from_str(backemoji), style=discord.ButtonStyle.secondary, row=0)
     async def back(self, interaction: discord.Interaction, button: discord.ui.Button):
         metadata = self.cache.get(interaction.message.id)
         time_str = metadata.response_time_str if metadata else "0.0s"
@@ -397,12 +413,8 @@ class AICog(commands.Cog):
         self.message_history = {}
         self.last_activity = {}
         self.cooldowns = {}
-        self.loading_icon = "<a:twilight_loading_icon:1506347831605198981>"
-        self.loading_dot = "<a:twilight_loading_dot:1506348237722878085>"
-        self.reportemoji = "<:ReportEmoji:1515283638164521031>"
-        self.threedotemoji = "<:ThreedotEmoji:1515283624088436767>"
-        self.retryemoji = "<:RetryEmoji:1515283585123483688>"
-        self.backemoji = "<:BackEmoji:1515286702787395724>"
+        self.loading_icon = twilightloading
+        self.loading_dot = loadingdot
         self.google_emoji = "GOOGLE"
 
         self.chat_locks = {}
