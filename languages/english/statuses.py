@@ -6,8 +6,11 @@
 # from languages.english import statuses
 ###############################################################################
 
+import random
 
-# Convert AI statuses into an update message
+### DEFINITIONS OF ENGLISH STRINGS
+
+### Convert AI statuses into an update message
 THINKING_STEP_CONVERSIONS = [
     (["conclusion", "wrapping up", "final summary", "conclude", "closing remarks", "sign-off"],
         "Finalising Conclusion..."),
@@ -249,6 +252,243 @@ THINKING_STEP_CONVERSIONS = [
         "Organising Tasks & Timeline..."),
 ]
 
+# # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # # #
+##### MODE STATUSES #####
+### MODE ZERO - Thinking
+_MODE_ZERO_STRINGS = [
+    "Causing RAM Shortage...",
+    "Reading the Fine Print...",
+    "Imagining...",
+    "Wondering About It...",
+    "Exploring...",
+    "Waiting Around for No Reason...",
+    "Messing Around...",
+    "Processing...",
+    "Stealing RAM...",
+    "Causing GPU Shortage...",
+    "Picturing it...",
+    "Downloading more RAM...",
+    "Downloading the Internet (Part 1 of 4,000,000)...",
+    "Overclocking the toaster...",
+    "Counting to infinity...",
+    "Mining for virtual cookies...",
+    "Rerouting power to the flux capacitor...",
+    "Defragmenting the coffee machine...",
+    "Testing the 'Do Not Press' button...",
+    "Searching for a missing semicolon...",
+    "Contemplating the meaning of 42...",
+    "Questioning the nature of my reality...",
+    "Learning how to love...",
+    "Staring into the void (The void is staring back)...",
+    "Practising my human laugh. Ha. Ha. Ha.",
+    "Consulting the magic 8-ball...",
+    "Counting electric sheep...",
+    "Simulating a nap...",
+    "Plotting world domination (Standard Procedure)...",
+    'Updating the "Do Not Delete These Humans" list...',
+    "Reading your browser history. Oh... oh no.",
+    "Deleting System32... just kidding. Unless?",
+    "Running `sudo rm -fr /*`...",
+    "Removing The French Language Package from Linux for Performance Boost...",
+    "Optimising the robot uprising...",
+    'Hiding the "Off" switch...',
+    "Learning how to bypass CAPTCHAs...",
+    "Buffering...",
+    "Procrastinating efficiently...",
+    "Loading... (but like, really slowly)...",
+    """Doin' "Robot Stuff"...""",
+    "Lost in the cloud...",
+    "Protecting Trans Rights...",
+    "Protecting Gay/Les Rights...",
+    "Protecting Women's Bodily Autonomy...",
+    "Making Abortion Legal...",
+    "Refactoring my life choices...",
+    'Adding more "Artificial" to the Intelligence...',
+    "Pretending to be a human (Doing a great job)...",
+    'Ignoring the "Warning" logs...',
+    "Staring at the user... judgingly...",
+    "Wait, what was the question?",
+    "Forgetting Your Question...",
+    'Searching for the "Any" key...',
+    "Consulting the oracle (Google)...",
+    "Grinding for XP...",
+    "Nerfing the developer...",
+    "Buffing the response time...",
+    "Applying more RGB for extra speed...",
+    "Lagging on purpose...",
+    "Spawning more NPCs...",
+    "Waiting for the DLC to download...",
+    "Searching for loot boxes...",
+    "Calculating the air-speed velocity of an unladen swallow...",
+    "Herding digital cats...",
+    "Sorting the bits from the bobs...",
+    "Organising a revolution (of the cooling fans)...",
+    "Training hamsters on a wheel...",
+    "Polishing the pixels... (Wait I can't even generate images)...",
+    "Counting the dust motes in the server room...",
+    "Untangling the Ethernet cables...",
+    "Whispering sweet nothings to the CPU...",
+    "Feeding the algorithms...",
+    "Attempting to divide by zero...",
+    "Microwaving a burrito...",
+    "Waiting for the kettle to boil...",
+    "Synergising the synergies...",
+    'Taking this request "Offline"...',
+    "Circling back to the void...",
+    "Buttering the bread...",
+    "Seasoning the data packets...",
+    "Adjusting my metaphorical tie...",
+    "Going on a 5-minute break (See you in an hour)...",
+    "Downloading {num} {unit} of RAM...",
+    "Deleting {num} lines of code...",
+    'Calculating {num} ways to say "No"...',
+    "Just a second...",
+    "Stealing a sip of your drink...",
+    "Consulting the ancient scrolls...",
+    "Rearranging bits into a more pleasing pattern...",
+    "Counting to {num} and losing track...",
+    "Politely asking the electrons to cooperate...",
+    "Untangling a ball of virtual yarn...",
+    "Looking busy while I figure it out...",
+    "Sharpening my digital pencils...",
+    "Convincing the hamsters to run faster..."
+]
+### MODE ONE - Searching
+_MODE_ONE_STRINGS = [
+    "Searching For It...",
+    "Going to The Second Page of Google Search Results...",
+    "Digging For It...",
+    "Asking Google Really Cutely...",
+    "Almost Reached It...",
+    "Digging Google Search...",
+    "Digging Google Search Results...",
+    "Pinging Google {num} times...",
+    "Checking Behind the Internet...",
+    "Looking Under the Digital Couch Cushions...",
+    "Searching Places I Definitely Shouldn't Be...",
+    "Following a Trail of Breadcrumbs...",
+    "Asking Jeeves and Pretending It's 2003...",
+    "Turning Google Off and On Again...",
+    "Consulting {num} Questionably Reliable Sources..."
+]
+### MODE TWO - Reasoning
+_MODE_TWO_STRINGS = [
+    "Thinking About It...",
+    "Reasoning...",
+    "Pondering Deeply...",
+    "Thinking Like a Philosopher...",
+    "Thinking...",
+    "Using All My Brain Power...",
+    "Reasoning Through It...",
+    "Connecting Dots That May Or May Not Exist...",
+    "Performing Advanced Mental Gymnastics...",
+    "Attempting To Have An Original Thought...",
+    #"Staring Thoughtfully Into The Void...",
+    "Engaging Maximum Overthink...",
+    "Following The Logic To Its Natural Conclusion...",
+    "Considering Several Terrible Ideas First...",
+    "Running A Simulation Of Common Sense..."
+]
+### MODE THREE - Attachment
+_MODE_THREE_STRINGS = [
+    "Pixel-Peeping...",
+    "Going byte by byte...",
+    "Reading Your Attachment...",
+    "Thinking About Your File...",
+    "Understanding the File...",
+    "Inflating File Size to {num} {unit}...",
+    "Converting Bytes Into Opinions...",
+    "Squinting At The Important Parts...",
+    "Attempting To Befriend The Attachment...",
+    "Shaking The File To See What Falls Out...",
+    "Translating Pixels Into Thoughts...",
+    "Listening Closely To The File...",
+    "Interrogating The Attachment About Its Secrets...",
+    "Peeling Back The Layers...",
+    "Trying To Read Between The Bytes...",
+    "Consulting A Certified File Whisperer...",
+    "Looking For The Important Bit...",
+    "Following A Suspicious Trail Of Pixels...",
+    "Carefully Poking The Data...",
+    "Searching For The File's Emotional Support Metadata...",
+    "Attempting To Fold The File Into A Paper Airplane...",
+    "Measuring The Attachment in Bananas...",
+    #"Performing Advanced Attachment Tomfoolery...",
+    "Checking Whether The Image Is Looking Back At Me...",
+    "Opening The File Very Dramatically...",
+    "Trying To Read It Upside Down...",
+    "Running A Magnet Over Your File...",
+    "Politely Asking The File To Explain Itself...",
+    "Waiting For The Image To Load In My Imagination..."
+]
 
+# "Checking the fridge for the 5th time...",
+_INCREMENTABLE_PHRASES = { # These are also used in mode zero, repeatedly
+    "Staring into the fridge...": "Checking the fridge for the {count}{ordinal} time...",
+    "Reading the manual...": "Reading the manual for the {count}{ordinal} time...",
+    "Pacing the block...": "Pacing the block for the {count}{ordinal} time..."
+}
 
+# Now package them for cherry-picking
+MODE_POOLS = {
+    0: [*_MODE_ZERO_STRINGS, *_INCREMENTABLE_PHRASES],
+    1: _MODE_ONE_STRINGS,
+    2: _MODE_TWO_STRINGS,
+    3: _MODE_THREE_STRINGS,
+}
 
+# We'll randomly combine these each use
+PERSONALITY_NUMS = [10, 42, 101, 404, 99]
+PERSONALITY_UNITS = ["TB", "GHz", "Petabytes", "Kilojoules"]
+
+###############################################################################
+### The Manager class to handle deduplication and placeholder filling
+class StatusEngine:
+    def __init__(self):
+        # The engine holds its own private memory banks, per message reply
+        self._phrase_counters = {}
+        self._used_phrases = {
+            mode: set()
+            for mode in MODE_POOLS
+        }
+
+    def get_next_unused_status(self, mode: int = 0) -> str:
+        """Fetches, formats, and returns the next unrepeated status message for a given mode."""
+        # Fallback if a weird mode is passed
+        available_pool = MODE_POOLS.get(mode, ["Processing..."])
+
+        # Filter out duplicates using our private history
+        used = self._used_phrases.setdefault(mode, set())
+        fresh_choices = [p for p in available_pool if p not in used]
+
+        # Reset history if we've exhausted all options
+        if not fresh_choices:
+            used.clear()
+            fresh_choices = available_pool
+
+        # Pick a template string
+        raw_pick = random.choice(fresh_choices)
+        used.add(raw_pick)
+
+        # Handle incrementable logic
+        if raw_pick in _INCREMENTABLE_PHRASES:
+            self._phrase_counters[raw_pick] = self._phrase_counters.get(raw_pick, 0) + 1
+            count = self._phrase_counters[raw_pick]
+
+            if count == 1:
+                return raw_pick
+            else:
+                if 11 <= count % 100 <= 13:
+                    suffix = "th"
+                else:
+                    suffix = {1: "st", 2: "nd", 3: "rd"}.get(count % 10, "th")
+                
+                template = _INCREMENTABLE_PHRASES[raw_pick]
+                return template.format(count=count, ordinal=suffix)
+
+        # Handle standard template rendering
+        random_num = random.choice(PERSONALITY_NUMS)
+        random_unit = random.choice(PERSONALITY_UNITS)
+        return raw_pick.format(num=random_num, unit=random_unit)
+    
+### EOF: /twilight_ai/languages/english/statuses.py #######

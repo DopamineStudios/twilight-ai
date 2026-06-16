@@ -12,7 +12,7 @@ import google.genai as genai
 from google.genai.types import HarmCategory, HarmBlockThreshold, GenerationConfig
 from google.genai import types
 from config import system_prompt, gemini_api_key
-import random
+import random # used by _trim_to_tokens()
 import asyncio
 from beacon import beacon_commands, preconditions
 from datetime import datetime, timezone
@@ -22,7 +22,10 @@ import mimetypes
 from dataclasses import dataclass
 import io
 
-from languages.english import statuses # Import our English status msgs
+# Import our English status msgs
+from languages.english.statuses import StatusEngine, THINKING_STEP_CONVERSIONS
+
+#NB: module still contains English hardcoded strings
 
 client = genai.Client(api_key=gemini_api_key)
 
@@ -240,7 +243,7 @@ class OverflowButtonView(discord.ui.View):
 
 class AICog(commands.Cog):
     # Convert AI steps into status update messages
-    _THINKING_STEP_RULES = statuses.THINKING_STEP_CONVERSIONS
+    _THINKING_STEP_RULES = THINKING_STEP_CONVERSIONS
 
     def __init__(self, bot):
         self.bot = bot
@@ -255,148 +258,22 @@ class AICog(commands.Cog):
         self.chat_locks = {}
 
     async def _personality_worker(self, message: discord.Message, stop_event: asyncio.Event, mode: int = 0):
+        # We fire up a fresh engine instance for this specific worker loop run!
+        # This keeps the history completely isolated to this message-response.
+        engine = StatusEngine()
+
         try:
             await asyncio.wait_for(stop_event.wait(), timeout=5.0)
             return
         except asyncio.TimeoutError:
             pass
             while not stop_event.is_set():
-                nums = [10, 42, 101, 404, 99]
-                units = ["TB", "GHz", "Petabytes", "Kilojoules"]
-                zero_presets = [
-                    "Increasing RAM Prices...",
-                    "Causing RAM Shortage...",
-                    "Reading the Fine Print...",
-                    "Imagining...",
-                    "Wondering About It...",
-                    "Exploring...",
-                    "Waiting Around for No Reason...",
-                    "Messing Around...",
-                    "Processing...",
-                    "Stealing RAM...",
-                    "Causing GPU Shortage...",
-                    "Picturing it...",
-                    "Downloading more RAM...",
-                    "Downloading the Internet (Part 1 of 4,000,000)...",
-                    "Overclocking the toaster...",
-                    "Counting to infinity...",
-                    "Mining for virtual cookies...",
-                    "Stealing Your Data... (jk I would never do that)",
-                    "Rerouting power to the flux capacitor...",
-                    "Defragmenting the coffee machine...",
-                    "Testing the 'Do Not Press' button...",
-                    "Searching for a missing semicolon...",
-                    "Contemplating the meaning of 42...",
-                    "Questioning the nature of my reality...",
-                    "Learning how to love...",
-                    "Staring into the void (The void is staring back)...",
-                    "Practising my human laugh. Ha. Ha. Ha.",
-                    "Consulting the magic 8-ball...",
-                    "Counting electric sheep...",
-                    "Simulating a nap...",
-                    "Plotting world domination (Standard Procedure)...",
-                    'Updating the "Do Not Delete These Humans" list...',
-                    "Reading your browser history. Oh... oh no.",
-                    "Deleting System32... just kidding. Unless?",
-                    "Running `sudo rm -fr /*`...",
-                    "Removing The French Language Package from Linux for Performance Boost...",
-                    "Optimising the robot uprising...",
-                    'Hiding the "Off" switch...',
-                    "Learning how to bypass CAPTCHAs...",
-                    "Buffering...",
-                    "Checking the fridge for the 5th time...",
-                    "Procrastinating efficiently...",
-                    "Loading... (but like, really slowly)...",
-                    """Doin' "Robot Stuff"...""",
-                    "Lost in the cloud...",
-                    "Sending Your Personal Info To Google...",
-                    "Protecting Trans Rights...",
-                    "Protecting Gay/Les Rights...",
-                    "Protecting Women's Bodily Autonomy...",
-                    "Making Abortion Legal...",
-                    "Refactoring my life choices...",
-                    'Adding more "Artificial" to the Intelligence...',
-                    "Pretending to be a human (Doing a great job)...",
-                    'Ignoring the "Warning" logs...',
-                    "Staring at the user... judgingly...",
-                    "Polishing the Python...",
-                    "Wait, what was the question?",
-                    "Forgetting Your Question...",
-                    'Searching for the "Any" key...',
-                    "Consulting the oracle (Google)...",
-                    "Grinding for XP...",
-                    "Nerfing the developer...",
-                    "Buffing the response time...",
-                    "Applying more RGB for extra speed...",
-                    "Lagging on purpose...",
-                    "Spawning more NPCs...",
-                    "Waiting for the DLC to download...",
-                    "Searching for loot boxes...",
-                    "Calculating the air-speed velocity of an unladen swallow...",
-                    "Herding digital cats...",
-                    "Sorting the bits from the bobs...",
-                    "Organising a revolution (of the cooling fans)...",
-                    "Training hamsters on a wheel...",
-                    "Polishing the pixels... (Wait I can't even generate images)...",
-                    "Counting the dust motes in the server room...",
-                    "Untangling the Ethernet cables...",
-                    "Whispering sweet nothings to the CPU...",
-                    "Feeding the algorithms...",
-                    "Attempting to divide by zero...",
-                    "Microwaving a burrito...",
-                    "Waiting for the kettle to boil...",
-                    "Synergising the synergies...",
-                    'Taking this request "Offline"...',
-                    "Circling back to the void...",
-                    "Butterring the bread...",
-                    "Seasoning the data packets...",
-                    "Adjusting my metaphorical tie...",
-                    "Going on a 5-minute break (See you in an hour)...",
-                    f"Downloading {random.choice(nums)} {random.choice(units)} of RAM...",
-                    f"Deleting {random.choice(nums)} lines of code...",
-                    f'Calculating {random.choice(nums)} ways to say "No"...',
-                    "Just a second...",
-                    "Just a sec..."
-                ]
-                one_presets = [
-                    "Searching For It...",
-                    "Going to The Second Page of Google Search Results...",
-                    "Digging For It...",
-                    "Asking Google Really Cutely...",
-                    "Almost Reached It...",
-                    "Digging Google Search...",
-                    "Digging Google Search Results..."
-                ]
-                two_presets = [
-                    "Thinking About It...",
-                    "Reasoning...",
-                    "Thinking Deeply...",
-                    "Thinking Like a Philosopher...",
-                    "Thinking...",
-                    "Using All My Brain Power...",
-                    "Reasoning Through It..."
-                ]
-                three_presets = [
-                    "Pixel-Peeping...",
-                    "Reading Your Attachment...",
-                    "Thinking About Your File...",
-                    "Understanding the File...",
-                    f"Inflating File Size to {random.choice(nums)} {random.choice(units)}..."
-                ]
-                if mode == 0:
-                    pick = random.choice(zero_presets)
-                elif mode == 1:
-                    pick = random.choice(one_presets)
-                elif mode == 2:
-                    pick = random.choice(two_presets)
-                elif mode == 3:
-                    pick = random.choice(three_presets)
-
                 if stop_event.is_set():
                     break
 
+                picked_respose = engine.get_next_unused_status(mode=mode)
                 try:
-                    await message.edit(content=f"## {self.loading_icon} {pick}")
+                    await message.edit(content=f"## {self.loading_icon} {picked_respose}")
                 except discord.NotFound:
                     break
 
@@ -517,6 +394,7 @@ class AICog(commands.Cog):
         except Exception:
             pass
 
+        #TODO: precompile and explain these substitutions
         val = re.sub(r'\\[a-zA-Z]+\{([^{}]*)\}', r'\1', val)
         val = re.sub(r'\\[a-zA-Z]+', '', val)
 
@@ -871,6 +749,7 @@ class AICog(commands.Cog):
         if not guild:
             return text
 
+        # TODO: precompile regexes
         patterns = {
             r'<@!?(\d+)>': "user",
             r'<#(\d+)>': "channel",
@@ -983,6 +862,7 @@ User prompt:
             return False
         if ' ' in keyword:
             return keyword in line_lower
+        # TODO: precompile regex
         return re.search(r'(?<!\w)' + re.escape(keyword) + r'(?!\w)', line_lower) is not None
 
     def _derive_thinking_step(self, thinking_text: str) -> str:
@@ -1118,8 +998,6 @@ User prompt:
 
                 image_analysis = False
                 try:
-
-
                     if message.attachments:
                         try:
                             stop_event.set()
