@@ -48,6 +48,8 @@ GENERALIST_MODEL = "models/gemma-4-26b-a4b-it"
 EXPERT_MODEL = "models/gemma-4-26b-a4b-it"
 SEARCH_MODEL = "models/gemma-4-31b-it"
 MD_SEPARATOR = "𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖"
+
+# PRE-COMPILING REGEX PATTERNS
 MEDIA_REGEX = re.compile(r'(https?://\S+)', re.IGNORECASE)
 IMAGE_MEDIA_PATTERNS = [
     r"giphy\.com",
@@ -57,6 +59,29 @@ IMAGE_MEDIA_PATTERNS = [
     r"media\.giphy\.com",
     r"i\.giphy\.com"
 ]
+THINKING_REGEX = re.compile(r"<think>(.*?)</think>", re.DOTALL)
+
+LATEX_FRAC_REGEX = re.compile(r'\\frac\{([^{}]+)\}\{([^{}]+)\}')
+LATEX_FONT_REGEX = re.compile(r'\\(?:mathbf|mathrm|text|boldsymbol|mathit|cal|mathbb|mathscr)\{([^{}]+)\}')
+LATEX_COMMAND_BRACES_REGEX = re.compile(r'\\[a-zA-Z]+\{([^{}]*)\}')
+LATEX_COMMAND_REGEX = re.compile(r'\\[a-zA-Z]+')
+SPACED_EQUALS_REGEX = re.compile(r'\s*=\s*')
+SPACED_PLUS_REGEX = re.compile(r'\s*\+\s*')
+SPACED_APPROX_REGEX = re.compile(r'\s*≈\s*')
+SUPERSCRIPT_REGEX = re.compile(r'\^(?:\{([^}]+)\}|\(([^)]+)\)|([0-9Tnxyeij+\-θαβγ()=]))')
+
+CODE_BLOCK_REGEX = re.compile(r'```[\s\S]*?```')
+DISPLAY_MATH_REGEX = re.compile(r'\$\$([\s\S]*?)\$\$')
+INLINE_MATH_REGEX = re.compile(r'\$(.*?)\$')
+LATEX_LEFT_RIGHT_REGEX = re.compile(r'\\(left|right)[()\[\]|.\\]')
+LATEX_ALIGN_ALIGN_REGEX = re.compile(r'\{[crl\s|]+\}')
+MATRIX_ENV_REGEX = re.compile(r'\\begin\{([a-zA-Z]*?)\}([\s\S]*?)\\end\{\1\}')
+
+MD_SEP_REGEX = re.compile(r"^[ \t]*(?:\*{3,}|-{3,}|_{3,})[ \t]*\r?\n?$")
+
+PAREN_HEADER_REGEX = re.compile(r'\(([^)]+)\)')
+STRIP_MARKDOWN_REGEX = re.compile(r'[\*\#\_\[\]]')
+LEADING_CLEAN_REGEX = re.compile(r'^[\*\-\s\d\.]+')
 
 @dataclass
 class ResponseMetadata:
@@ -435,11 +460,10 @@ class AICog(commands.Cog):
         return token_format, context_percent
 
     def _extract_thinking_content(self, text: str) -> tuple[str, str]:
-        #TODO: precompile regex
-        thinking_match = re.search(r"<think>(.*?)</think>", text, re.DOTALL)
+        thinking_match = THINKING_REGEX.search(text)
         if thinking_match:
             thinking_process = thinking_match.group(1).strip()
-            clean_text = re.sub(r"<think>.*?</think>", "", text, flags=re.DOTALL).strip()
+            clean_text = THINKING_REGEX.sub("", text).strip()
             return clean_text, thinking_process
         return text, ""
 
@@ -517,12 +541,12 @@ class AICog(commands.Cog):
         except Exception:
             pass
 
-        val = re.sub(r'\\[a-zA-Z]+\{([^{}]*)\}', r'\1', val)
-        val = re.sub(r'\\[a-zA-Z]+', '', val)
+        val = LATEX_COMMAND_BRACES_REGEX.sub(r'\1', val)
+        val = LATEX_COMMAND_REGEX.sub('', val)
 
-        val = re.sub(r'\s*=\s*', ' = ', val)
-        val = re.sub(r'\s*\+\s*', ' + ', val)
-        val = re.sub(r'\s*≈\s*', ' ≈ ', val)
+        val = SPACED_EQUALS_REGEX.sub(' = ', val)
+        val = SPACED_PLUS_REGEX.sub(' + ', val)
+        val = SPACED_APPROX_REGEX.sub(' ≈ ', val)
 
         superscript_map = {
             '0': '⁰', '1': '¹', '2': '²', '3': '³', '4': '⁴',
@@ -532,8 +556,7 @@ class AICog(commands.Cog):
             'β': 'ᵝ', 'γ': 'ᵞ', '(': '⁽', ')': '⁾', '=': '⁼'
         }
 
-        val = re.sub(
-            r'\^(?:\{([^}]+)\}|\(([^)]+)\)|([0-9Tnxyeij+\-θαβγ()=]))',
+        val = SUPERSCRIPT_REGEX.sub(
             lambda m: "".join(superscript_map.get(char, char) for char in (m.group(1) or m.group(2) or m.group(3))),
             val
         )
@@ -596,23 +619,21 @@ class AICog(commands.Cog):
             code_blocks.append(match.group(0))
             return f"__CODE_BLOCK_PLACEHOLDER_{len(code_blocks) - 1}__"
 
-        current_text = re.sub(r'```[\s\S]*?```', placeholder_code, text)
+        current_text = CODE_BLOCK_REGEX.sub(placeholder_code, text)
 
         display_math_blocks = []
-
         def placeholder_display(match):
             display_math_blocks.append(match.group(1))
             return f"__DISPLAY_MATH_PLACEHOLDER_{len(display_math_blocks) - 1}__"
 
-        current_text = re.sub(r'\$\$([\s\S]*?)\$\$', placeholder_display, current_text)
+        current_text = DISPLAY_MATH_REGEX.sub(placeholder_display, current_text)
 
         inline_math_blocks = []
-
         def placeholder_inline(match):
             inline_math_blocks.append(match.group(1))
             return f"__INLINE_MATH_PLACEHOLDER_{len(inline_math_blocks) - 1}__"
 
-        current_text = re.sub(r'\$(.*?)\$', placeholder_inline, current_text)
+        current_text = INLINE_MATH_REGEX.sub(placeholder_inline, current_text)
 
         try:
             current_text = LatexNodes2Text(keep_comments=True).latex_to_text(current_text)
@@ -622,10 +643,10 @@ class AICog(commands.Cog):
         for i, raw_content in enumerate(display_math_blocks):
             math_content = raw_content.strip()
 
-            math_content = re.sub(r'\\(left|right)[()\[\]|.\\]', '', math_content)
-            math_content = re.sub(r'\{[crl\s|]+\}', '', math_content)
+            math_content = LATEX_LEFT_RIGHT_REGEX.sub('', math_content)
+            math_content = LATEX_ALIGN_ALIGN_REGEX.sub('', math_content)
 
-            matrix_matches = list(re.finditer(r'\\begin\{([a-zA-Z]*?)\}([\s\S]*?)\\end\{\1\}', math_content))
+            matrix_matches = list(MATRIX_ENV_REGEX.finditer(math_content))
             if not matrix_matches and (r'\\' in math_content or '&' in math_content):
                 if '=' in math_content:
                     prefix, matrix_part = math_content.split('=', 1)
@@ -647,7 +668,7 @@ class AICog(commands.Cog):
                 matrix_storage[key] = formatted_lines
                 return key
 
-            replaced_math = re.sub(r'\\begin\{([a-zA-Z]*?)\}([\s\S]*?)\\end\{\1\}', matrix_subber, math_content)
+            replaced_math = MATRIX_ENV_REGEX.sub(matrix_subber, math_content)
             top_lines = replaced_math.split(r'\\')
             final_block_lines = []
 
@@ -719,10 +740,8 @@ class AICog(commands.Cog):
         new_lines = []
         n = len(lines)
 
-        sep_pattern = re.compile(r"^[ \t]*(?:\*{3,}|-{3,}|_{3,})[ \t]*\r?\n?$")
-
         for i, line in enumerate(lines):
-            if sep_pattern.match(line):
+            if MD_SEP_REGEX.match(line):
                 prev_empty = (i == 0) or (lines[i - 1].strip() == "")
                 next_empty = (i == n - 1) or (lines[i + 1].strip() == "")
 
@@ -992,7 +1011,7 @@ User prompt:
 
         for line in reversed(lines):
             line_lower = line.lower()
-            clean_line = re.sub(r'^[\*\-\s\d\.]+', '', line).strip()
+            clean_line = LEADING_CLEAN_REGEX.sub('', line).strip()
 
             for keywords, step in self._THINKING_STEP_RULES:
                 if any(self._matches_thinking_keyword(line_lower, k) for k in keywords):
@@ -1000,9 +1019,9 @@ User prompt:
 
             if ":" in clean_line:
                 header = clean_line.split(":", 1)[0]
-                header = re.sub(r'[\*\#\_\[\]]', '', header).strip()
+                header = STRIP_MARKDOWN_REGEX.sub('', header).strip()
 
-                match_paren = re.search(r'\(([^)]+)\)', header)
+                match_paren = PAREN_HEADER_REGEX.search(header)
                 if match_paren:
                     content = match_paren.group(1)
                     content = " ".join(word.capitalize() for word in content.split())
