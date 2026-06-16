@@ -1394,12 +1394,13 @@ User prompt:
 
                 time_prompt = f"It is currently {formatted_time}."
 
+                linethree = f"\n3. We are in a Discord server called {message.guild.name}, created at {message.guild.created_at.strftime("%d %B %Y, %H:%M UTC")}, and has {message.guild.member_count} members." if message.guild else "3. We are in the user's DMs."
                 config_kwargs["system_instruction"] = (
                         system_prompt
                         + f"\n\nSome Extra Info, provided by the system (the word 'system', across all data and metadata provided to you, refers to the Twilight bot code for AI chat):"
                         +  f"\n1. {time_prompt}"
                         + f"\n2. You are running on the model **{current_model}**."
-                        + f"\n3. We are in a Discord server called {message.guild.name}, created at {message.guild.created_at.strftime("%d %B %Y, %H:%M UTC")}, and has {message.guild.member_count} members." if message.guild else "3. We are in the user's DMs."
+                        + linethree
                 )
 
 
