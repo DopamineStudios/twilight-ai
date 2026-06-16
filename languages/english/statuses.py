@@ -263,7 +263,7 @@ _MODE_ZERO_STRINGS = [
     "Exploring...",
     "Waiting Around for No Reason...",
     "Messing Around...",
-    "Processing...",
+    #"Processing...",
     "Stealing RAM...",
     "Causing GPU Shortage...",
     "Picturing it...",
@@ -279,7 +279,7 @@ _MODE_ZERO_STRINGS = [
     "Contemplating the meaning of 42...",
     "Questioning the nature of my reality...",
     "Learning how to love...",
-    "Staring into the void (The void is staring back)...",
+    "Staring into the void (the void is staring back)...",
     "Practising my human laugh. Ha. Ha. Ha.",
     "Consulting the magic 8-ball...",
     "Counting electric sheep...",
@@ -302,13 +302,14 @@ _MODE_ZERO_STRINGS = [
     "Protecting Gay/Les Rights...",
     "Protecting Women's Bodily Autonomy...",
     "Making Abortion Legal...",
+    "Protecting the Free Internet...",
     "Refactoring my life choices...",
     'Adding more "Artificial" to the Intelligence...',
     "Pretending to be a human (Doing a great job)...",
     'Ignoring the "Warning" logs...',
     "Staring at the user... judgingly...",
-    "Wait, what was the question?",
-    "Forgetting Your Question...",
+    #"Wait, what was the question?",
+    #"Forgetting Your Question...",
     'Searching for the "Any" key...',
     "Consulting the oracle (Google)...",
     "Grinding for XP...",
@@ -342,7 +343,7 @@ _MODE_ZERO_STRINGS = [
     "Downloading {num} {unit} of RAM...",
     "Deleting {num} lines of code...",
     'Calculating {num} ways to say "No"...',
-    "Just a second...",
+    "Just a few more seconds...",
     "Stealing a sip of your drink...",
     "Consulting the ancient scrolls...",
     "Rearranging bits into a more pleasing pattern...",
@@ -351,7 +352,8 @@ _MODE_ZERO_STRINGS = [
     "Untangling a ball of virtual yarn...",
     "Looking busy while I figure it out...",
     "Sharpening my digital pencils...",
-    "Convincing the hamsters to run faster..."
+    "Convincing the hamsters to run faster...",
+    "Reticulating splines, whatever that means..."
 ]
 ### MODE ONE - Searching
 _MODE_ONE_STRINGS = [
@@ -461,7 +463,7 @@ class StatusEngine:
         used = self._used_phrases.setdefault(mode, set())
         fresh_choices = [p for p in available_pool if p not in used]
 
-        # Reset history if we've exhausted all options
+        # Reset that history if we've exhausted all its options
         if not fresh_choices:
             used.clear()
             fresh_choices = available_pool
