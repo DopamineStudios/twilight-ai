@@ -187,7 +187,7 @@ class OverflowButtonView(discord.ui.View):
             self.children[0].label = f"Context: {metadata.context_percent}"
             self.children[1].label = f"Tokens: {metadata.token_format}"
             if not metadata.thinking_process:
-                self.children[2].disabled = True
+                self.children[3].disabled = True
 
     @discord.ui.button(label="Context: --%", style=discord.ButtonStyle.secondary, disabled=True, row=2)
     async def context_stat(self, interaction: discord.Interaction, button: discord.ui.Button):
