@@ -39,6 +39,8 @@ backemoji = "<:BackEmoji:1516126262265909388>"
 twilightloading = "<a:twilight_loading_icon:1516126476280398014>"
 loadingdot = "<a:loadingdot:1516126281719218297>"
 
+REPORT_CHANNEL=1516324617910878309
+
 JUDGE_MODEL = "models/gemma-4-26b-a4b-it"
 GENERALIST_MODEL = "models/gemma-4-26b-a4b-it"
 EXPERT_MODEL = "models/gemma-4-26b-a4b-it"
@@ -98,6 +100,61 @@ class ResponseCache:
             del self._cache[k]
 
 
+class ReportReasonModal(discord.ui.Modal, title="Report Response"):
+    reason = discord.ui.TextInput(
+        label="Reason for report",
+        style=discord.TextStyle.long,
+        placeholder="Please describe why you are reporting this generation (e.g., incorrect formatting, harmful content, hallucination)...",
+        required=True,
+        max_length=1000
+    )
+
+    def __init__(self, message_to_report: discord.Message):
+        super().__init__()
+        self.message_to_report = message_to_report
+
+    async def on_submit(self, interaction: discord.Interaction):
+        await interaction.response.send_message(
+            "**Response Reported Successfully:** This generation has been reported for internal review. Thank you!",
+            ephemeral=True
+        )
+
+        report_channel = interaction.client.get_channel(REPORT_CHANNEL) or await interaction.client.fetch_channel(REPORT_CHANNEL)
+        if not report_channel:
+            print(f"Could not retrieve report channel.")
+            return
+
+        reporter = interaction.user
+        original_content = self.message_to_report.content or "*(No text content - possibly embed-only)*"
+
+        embed = discord.Embed(
+            title="Response Report Received",
+            colour=discord.Colour.red(),
+            timestamp=datetime.now(timezone.utc)
+        )
+        embed.add_field(name="Reported By", value=f"{reporter.mention} ({reporter.id})", inline=True)
+        embed.add_field(name="Channel Context", value=f"{interaction.channel.mention if interaction.guild else 'DMs'}",
+                        inline=True)
+        embed.add_field(name="Reason Provided", value=self.reason.value, inline=False)
+
+        if len(original_content) > 1000:
+            original_content = original_content[:1000] + "...\n*(Truncated due to length)*"
+
+        embed.add_field(name="Original Response Text Fragment", value=f"```text\n{original_content}\n```", inline=False)
+        embed.add_field(name="Jump to Message",
+                        value=f"[Click Here to View Message]({self.message_to_report.jump_url})", inline=False)
+
+        if self.message_to_report.embeds:
+            embed_descs = []
+            for idx, emb in enumerate(self.message_to_report.embeds):
+                if emb.description:
+                    desc_frag = emb.description[:300] + "..." if len(emb.description) > 300 else emb.description
+                    embed_descs.append(f"Embed {idx + 1}: {desc_frag}")
+            if embed_descs:
+                embed.add_field(name="Contained Embed Summaries", value="\n".join(embed_descs), inline=False)
+
+        await report_channel.send(embed=embed)
+
 class MainResponseView(discord.ui.View):
     def __init__(self, cache, initial_time_str: str = "0.0s", timeout: float = 3600.0):
         super().__init__(timeout=timeout)
@@ -142,8 +199,8 @@ class OverflowButtonView(discord.ui.View):
 
     @discord.ui.button(label="Report Response", style=discord.ButtonStyle.danger, emoji=discord.PartialEmoji.from_str(reportemoji), row=1)
     async def report_response(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.send_message(
-            "**Response Flagged:** This generation has been reported for internal review.", ephemeral=True)
+        modal = ReportReasonModal(message_to_report=interaction.message)
+        await interaction.response.send_modal(modal)
 
     @discord.ui.button(label="Show Thinking Process", style=discord.ButtonStyle.secondary, row=1)
     async def show_thinking(self, interaction: discord.Interaction, button: discord.ui.Button):
