@@ -246,7 +246,6 @@ class MainResponseView(discord.ui.View):
             )
             return
 
-        # Disable button immediately to provide instant feedback and lock sequential execution
         button.disabled = True
         await interaction.response.edit_message(view=self)
 
@@ -261,12 +260,7 @@ class MainResponseView(discord.ui.View):
                                             ephemeral=True)
             return
 
-        # Purge the stale model response from the active history tracking to avoid duplications
-        history = self.cog.message_history.get(self.identifier, [])
-        if history and history[-1].role == "model":
-            history.pop()
-
-        await self.cog.on_message(user_msg)
+        await self.cog.on_message(user_msg, retry_message=interaction.message)
 
     @discord.ui.button(emoji=discord.PartialEmoji.from_str(threedotemoji), style=discord.ButtonStyle.secondary, row=0)
     async def overflow(self, interaction: discord.Interaction, button: discord.ui.Button):
@@ -1004,7 +998,7 @@ User prompt:
         return thought_text
 
     @commands.Cog.listener()
-    async def on_message(self, message):
+    async def on_message(self, message, retry_message = None):
         if message.author.bot:
             return
 
@@ -1023,7 +1017,12 @@ User prompt:
 
         prompt = await self._replace_mentions(prompt, message.guild)
         channel_name = self.bot.get_channel(message.channel.id) or await self.bot.fetch_channel(message.channel.id)
-        prompt = f"USER's PROMPT (User's name is {message.author.display_name}, prompt sent at {message_timestamp} in Discord channel {channel_name}): {prompt.strip()}"
+        author_display_name = message.author.display_name
+        if message.guild and not isinstance(message.author, discord.Member):
+            member = message.guild.get_member(message.author.id) or await message.guild.fetch_member(message.author.id)
+            if member:
+                author_display_name = member.display_name
+        prompt = f"USER's PROMPT (User's name is {author_display_name}, prompt sent at {message_timestamp} in Discord channel {channel_name}): {prompt.strip()}\nEND OF USER PROMPT"
 
         if message.reference and message.reference.resolved:
             ref_msg = message.reference.resolved
@@ -1044,7 +1043,11 @@ User prompt:
             return
 
         # Message is for Twilight!, generate response
-        queue_msg = await message.reply(f"## {self.loading_icon} Just a sec...\n\n", mention_author=False)
+        if retry_message:
+            queue_msg = retry_message
+            await queue_msg.edit(content=f"## {self.loading_icon} Just a sec...\n\n", view=None, embed=None)
+        else:
+            queue_msg = await message.reply(f"## {self.loading_icon} Just a sec...\n\n", mention_author=False)
         stop_event = asyncio.Event()
         worker_task = asyncio.create_task(self._personality_worker(queue_msg, stop_event, mode=0))
 
@@ -1299,6 +1302,10 @@ User prompt:
                     image_context_text = "\n*[System Context: User uploaded an image or file but system has failed to generate a description for it]*"
             else:
                 image_context_text = ""
+
+            if retry_message and len(self.message_history[identifier]) >= 2:
+                self.message_history[identifier].pop()
+                self.message_history[identifier].pop()
 
             self.message_history[identifier].append(
                 types.Content(role="user", parts=[types.Part(text=prompt + image_context_text)])
