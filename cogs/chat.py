@@ -1205,7 +1205,7 @@ User prompt:
 
             except Exception as e:
 
-                await queue_msg.edit(content=f"""Error: Google AI Studio is currently unavailable or encountered a problem. Please try again later.\n> If the error message says "500 Internal Server Error", it is an error on our AI Provider's end i.e. Google AI Studio. Google makes this error message notoriously vague on purpose - it happens seemingly at random, and it's impossible to know what even caused it. Please re-try after a few seconds.\n\nError Message:\n```{e}```""")
+                await queue_msg.edit(content=f"""Error: Google AI Studio is currently unavailable or encountered a problem. Please try again later.\n> If the error message says "500 Internal Server Error", it is an error on our AI Provider's end i.e. Google AI Studio. Google makes this error message notoriously vague on purpose - it happens seemingly at random, and it's impossible to know what even caused it. Please re-try after a few seconds.\nError Message:\n```{e}```""")
                 return
 
             if message.attachments and uploaded_files:
