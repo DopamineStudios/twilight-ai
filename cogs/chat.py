@@ -105,41 +105,62 @@ class ResponseMetadata:
     context_percent: str
     token_format: str
     timestamp: float
+    channel_id: int  # Added to track where the message lives
     thinking_process: str = ""
 
 
 class ResponseCache:
-    def __init__(self, ttl_seconds: int = 3600):
+    def __init__(self, bot, ttl_seconds: int = 3600):
         self._cache = {}
+        self.bot = bot
         self.ttl = ttl_seconds
 
-    def set(self, message_id: int, response_time: str, model: str, context: str, tokens: str, thinking_process: str = ""):
+    def set(self, message_id: int, response_time: str, model: str, context: str, tokens: str, channel_id: int,
+            thinking_process: str = ""):
         self._cache[message_id] = ResponseMetadata(
             response_time_str=response_time,
             model_name=model,
             context_percent=context,
             token_format=tokens,
             timestamp=time.time(),
+            channel_id=channel_id,
             thinking_process=thinking_process
         )
-        self._cleanup()
+        # Create a background task that actively wakes up after 1 hour
+        asyncio.create_task(self._track_expiry(message_id))
 
     def get(self, message_id: int) -> ResponseMetadata | None:
-        self._cleanup()
-        return self._cache.get(message_id)
+        # Check v.timestamp manually in case a task hasn't finished execution yet
+        metadata = self._cache.get(message_id)
+        if metadata and (time.time() - metadata.timestamp > self.ttl):
+            return None
+        return metadata
 
     def delete(self, message_id: int):
         if message_id in self._cache:
             del self._cache[message_id]
 
-    def _cleanup(self):
-        now = time.time()
-        expired_keys = [
-            k for k, v in self._cache.items()
-            if now - v.timestamp > self.ttl
-        ]
-        for k in expired_keys:
-            del self._cache[k]
+    async def _track_expiry(self, message_id: int):
+        await asyncio.sleep(self.ttl)
+
+        if message_id not in self._cache:
+            return
+
+        metadata = self._cache[message_id]
+
+        try:
+            channel = self.bot.get_channel(metadata.channel_id) or await self.bot.fetch_channel(metadata.channel_id)
+            if channel:
+                message = await channel.fetch_message(message_id)
+                await message.edit(view=ExpiredResponseView())
+        except discord.NotFound:
+            pass
+        except discord.Forbidden:
+            print(f"Lacking permissions to update expired view for message {message_id}")
+        except Exception as e:
+            print(f"Error updating expired view for message {message_id}: {e}")
+        finally:
+            self.delete(message_id)
 
 
 class ReportReasonModal(discord.ui.Modal, title="Report Response"):
@@ -339,13 +360,23 @@ class OverflowButtonView(discord.ui.View):
         )
         await interaction.response.edit_message(view=main_view)
 
+class ExpiredResponseView(discord.ui.View):
+    def __init__(self, timeout: float | None = None):
+        super().__init__(timeout=timeout)
+
+    @discord.ui.button(label="Report Response", style=discord.ButtonStyle.danger,
+                       emoji=discord.PartialEmoji.from_str(reportemoji), row=0)
+    async def report_response(self, interaction: discord.Interaction, button: discord.ui.Button):
+        modal = ReportReasonModal(message_to_report=interaction.message)
+        await interaction.response.send_modal(modal)
+
 class AICog(commands.Cog):
     # Convert AI steps into status update messages
     _THINKING_STEP_RULES = THINKING_STEP_CONVERSIONS
 
     def __init__(self, bot):
         self.bot = bot
-        self.response_cache = ResponseCache(ttl_seconds=3600)
+        self.response_cache = ResponseCache(bot=self.bot, ttl_seconds=3600)
         self.message_history = {}
         self.last_activity = {}
         self.cooldowns = {}
@@ -1256,6 +1287,7 @@ User prompt:
                                 model=current_model or "Google Gemma 4 26B",
                                 context=context_percent,
                                 tokens=token_format,
+                                channel_id=message.channel.id,
                                 thinking_process=extracted_thinking
                             )
                         break
