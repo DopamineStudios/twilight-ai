@@ -21,6 +21,7 @@ import unicodeitplus
 import mimetypes
 from dataclasses import dataclass
 import io
+import functools
 
 # Import our English status msgs
 from languages.english.statuses import StatusEngine, THINKING_STEP_CONVERSIONS
@@ -85,6 +86,17 @@ MD_SEP_REGEX = re.compile(r"^[ \t]*(?:\*{3,}|-{3,}|_{3,})[ \t]*\r?\n?$")
 PAREN_HEADER_REGEX = re.compile(r'\(([^)]+)\)')
 STRIP_MARKDOWN_REGEX = re.compile(r'[\*\#\_\[\]]')
 LEADING_CLEAN_REGEX = re.compile(r'^[\*\-\s\d\.]+')
+MENTION_PATTERNS = {
+    re.compile(r'<@!?(\d+)>'): "user",
+    re.compile(r'<#(\d+)>'): "channel",
+    re.compile(r'<@&(\d+)>'): "role"
+}
+IMAGE_MEDIA_RE_PATTERNS = [re.compile(p, re.IGNORECASE) for p in IMAGE_MEDIA_PATTERNS]
+HEADER_COLON_REGEX = re.compile(r'^([^:]+):')
+
+@functools.lru_cache(maxsize=1024)
+def get_keyword_regex(keyword: str):
+    return re.compile(r'(?<!\w)' + re.escape(keyword) + r'(?!\w)')
 
 @dataclass
 class ResponseMetadata:
@@ -399,7 +411,7 @@ class AICog(commands.Cog):
         )
 
         for _ in range(2):
-            val = re.sub(r'\\(?:mathbf|mathrm|text|boldsymbol|mathit|cal|mathbb|mathscr)\{([^{}]+)\}', r'\1', val)
+            val = LATEX_FONT_REGEX.sub(r'\1', val)
 
         replacements = {
             r'\cos': 'cos', r'\sin': 'sin', r'\tan': 'tan', r'\det': 'det',
@@ -722,10 +734,7 @@ class AICog(commands.Cog):
                             content_type = resp.content_type.lower()
 
 
-                    is_known_media_provider = any(
-                        re.search(pattern, url, re.IGNORECASE)
-                        for pattern in IMAGE_MEDIA_PATTERNS
-                    )
+                    is_known_media_provider = any(pattern.search(url) for pattern in IMAGE_MEDIA_RE_PATTERNS)
 
 
                     if content_type.startswith(('image/', 'video/')) or is_known_media_provider:
@@ -767,16 +776,9 @@ class AICog(commands.Cog):
         if not guild:
             return text
 
-        # TODO: precompile regexes
-        patterns = {
-            r'<@!?(\d+)>': "user",
-            r'<#(\d+)>': "channel",
-            r'<@&(\d+)>': "role"
-        }
-
         matches = []
-        for pattern, m_type in patterns.items():
-            for match in re.finditer(pattern, text):
+        for pattern, m_type in MENTION_PATTERNS.items():
+            for match in pattern.finditer(text):
                 matches.append((match.start(), match.end(), match.group(1), m_type))
 
         matches.sort()
@@ -880,8 +882,8 @@ User prompt:
             return False
         if ' ' in keyword:
             return keyword in line_lower
-        # TODO: precompile regex
-        return re.search(r'(?<!\w)' + re.escape(keyword) + r'(?!\w)', line_lower) is not None
+
+        return get_keyword_regex(keyword).search(line_lower) is not None
 
     def _derive_thinking_step(self, thinking_text: str) -> str:
         lines = [line.strip() for line in thinking_text.split('\n') if line.strip()]
@@ -896,8 +898,9 @@ User prompt:
                 if any(self._matches_thinking_keyword(line_lower, k) for k in keywords):
                     return step
 
-            if ":" in clean_line:
-                header = clean_line.split(":", 1)[0]
+            match_colon = HEADER_COLON_REGEX.match(clean_line)
+            if match_colon:
+                header = match_colon.group(1)
                 header = STRIP_MARKDOWN_REGEX.sub('', header).strip()
 
                 match_paren = PAREN_HEADER_REGEX.search(header)
