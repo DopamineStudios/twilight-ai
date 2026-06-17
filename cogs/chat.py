@@ -197,30 +197,89 @@ class ReportReasonModal(discord.ui.Modal, title="Report Response"):
 
         await report_channel.send(embed=embed)
 
+
 class MainResponseView(discord.ui.View):
-    def __init__(self, cache, initial_time_str: str = "0.0s", timeout: float = 3600.0):
+    def __init__(self, cog, identifier, message_id: int | None, cache, initial_time_str: str = "0.0s",
+                 timeout: float = 3600.0):
         super().__init__(timeout=timeout)
+        self.cog = cog
+        self.identifier = identifier
+        self.message_id = message_id
         self.cache = cache
         self.children[0].label = f" {initial_time_str} "
+
+        if message_id:
+            self.check_retry_status()
+
+    def check_retry_status(self):
+        active_id = self.cog._active_responses.get(self.identifier)
+        metadata = self.cache.get(self.message_id)
+
+        is_latest = (self.message_id == active_id)
+        has_expired = False
+        if metadata:
+            # 5-minute absolute hard deadline threshold
+            has_expired = (time.time() - metadata.timestamp > 300)
+
+        if not is_latest or has_expired:
+            self.children[1].disabled = True
 
     @discord.ui.button(label="0.0s", style=discord.ButtonStyle.secondary, disabled=True, row=0)
     async def response_time(self, interaction: discord.Interaction, button: discord.ui.Button):
         pass
 
-    @discord.ui.button(label="Retry", style=discord.ButtonStyle.secondary, emoji=discord.PartialEmoji.from_str(retryemoji), row=0)
+    @discord.ui.button(label="Retry", style=discord.ButtonStyle.secondary,
+                       emoji=discord.PartialEmoji.from_str(retryemoji), row=0)
     async def retry(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.defer()
+        active_id = self.cog._active_responses.get(self.identifier)
+        metadata = self.cache.get(interaction.message.id)
+
+        is_latest = (interaction.message.id == active_id)
+        has_expired = (time.time() - metadata.timestamp > 300) if metadata else True
+
+        if not is_latest or has_expired:
+            button.disabled = True
+            await interaction.response.edit_message(view=self)
+            await interaction.followup.send(
+                "This response is no longer the active head of the conversation history or has expired.",
+                ephemeral=True
+            )
+            return
+
+        # Disable button immediately to provide instant feedback and lock sequential execution
+        button.disabled = True
+        await interaction.response.edit_message(view=self)
+
+        if not interaction.message.reference:
+            await interaction.followup.send("Cannot locate the original prompt reference.", ephemeral=True)
+            return
+
+        try:
+            user_msg = await interaction.channel.fetch_message(interaction.message.reference.message_id)
+        except Exception:
+            await interaction.followup.send("Could not retrieve the original prompt from channel history.",
+                                            ephemeral=True)
+            return
+
+        # Purge the stale model response from the active history tracking to avoid duplications
+        history = self.cog.message_history.get(self.identifier, [])
+        if history and history[-1].role == "model":
+            history.pop()
+
+        await self.cog.on_message(user_msg)
 
     @discord.ui.button(emoji=discord.PartialEmoji.from_str(threedotemoji), style=discord.ButtonStyle.secondary, row=0)
     async def overflow(self, interaction: discord.Interaction, button: discord.ui.Button):
-        overflow_view = OverflowButtonView(cache=self.cache)
+        overflow_view = OverflowButtonView(cog=self.cog, identifier=self.identifier, cache=self.cache)
         overflow_view.update_layout_from_cache(interaction.message.id)
         await interaction.response.edit_message(view=overflow_view)
 
 
 class OverflowButtonView(discord.ui.View):
-    def __init__(self, cache, timeout: float = 3600.0):
+    def __init__(self, cog, identifier, cache, timeout: float = 3600.0):
         super().__init__(timeout=timeout)
+        self.cog = cog
+        self.identifier = identifier
         self.cache = cache
 
     def update_layout_from_cache(self, message_id: int):
@@ -239,7 +298,8 @@ class OverflowButtonView(discord.ui.View):
     async def token_stat(self, interaction: discord.Interaction, button: discord.ui.Button):
         pass
 
-    @discord.ui.button(label="Report Response", style=discord.ButtonStyle.danger, emoji=discord.PartialEmoji.from_str(reportemoji), row=1)
+    @discord.ui.button(label="Report Response", style=discord.ButtonStyle.danger,
+                       emoji=discord.PartialEmoji.from_str(reportemoji), row=1)
     async def report_response(self, interaction: discord.Interaction, button: discord.ui.Button):
         modal = ReportReasonModal(message_to_report=interaction.message)
         await interaction.response.send_modal(modal)
@@ -270,12 +330,19 @@ class OverflowButtonView(discord.ui.View):
                 ephemeral=True
             )
 
-    @discord.ui.button(label="Back", emoji=discord.PartialEmoji.from_str(backemoji), style=discord.ButtonStyle.secondary, row=0)
+    @discord.ui.button(label="Back", emoji=discord.PartialEmoji.from_str(backemoji),
+                       style=discord.ButtonStyle.secondary, row=0)
     async def back(self, interaction: discord.Interaction, button: discord.ui.Button):
         metadata = self.cache.get(interaction.message.id)
         time_str = metadata.response_time_str if metadata else "0.0s"
 
-        main_view = MainResponseView(cache=self.cache, initial_time_str=time_str)
+        main_view = MainResponseView(
+            cog=self.cog,
+            identifier=self.identifier,
+            message_id=interaction.message.id,
+            cache=self.cache,
+            initial_time_str=time_str
+        )
         await interaction.response.edit_message(view=main_view)
 
 class AICog(commands.Cog):
@@ -293,6 +360,7 @@ class AICog(commands.Cog):
         self.google_emoji = "GOOGLE"
 
         self.chat_locks = {}
+        self._active_responses = {}
 
     async def _personality_worker(self, message: discord.Message, stop_event: asyncio.Event, mode: int = 0):
         # We fire up a fresh engine instance for this specific worker loop run!
@@ -1158,7 +1226,15 @@ User prompt:
                                 response_text=clean_display_text
                             )
 
-                            view = MainResponseView(cache=self.response_cache, initial_time_str=response_time_str)
+                            self._active_responses[identifier] = queue_msg.id
+
+                            view = MainResponseView(
+                                cog=self,
+                                identifier=identifier,
+                                message_id=queue_msg.id,
+                                cache=self.response_cache,
+                                initial_time_str=response_time_str
+                            )
 
                             content, embeds = self._format_response_payload(
                                 clean_display_text,
