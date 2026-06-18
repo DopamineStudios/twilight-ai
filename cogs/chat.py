@@ -21,6 +21,7 @@ import unicodeitplus
 import mimetypes
 from dataclasses import dataclass
 import io
+import functools
 
 # Import our English status msgs
 from languages.english.statuses import StatusEngine, THINKING_STEP_CONVERSIONS
@@ -85,6 +86,17 @@ MD_SEP_REGEX = re.compile(r"^[ \t]*(?:\*{3,}|-{3,}|_{3,})[ \t]*\r?\n?$")
 PAREN_HEADER_REGEX = re.compile(r'\(([^)]+)\)')
 STRIP_MARKDOWN_REGEX = re.compile(r'[\*\#\_\[\]]')
 LEADING_CLEAN_REGEX = re.compile(r'^[\*\-\s\d\.]+')
+MENTION_PATTERNS = {
+    re.compile(r'<@!?(\d+)>'): "user",
+    re.compile(r'<#(\d+)>'): "channel",
+    re.compile(r'<@&(\d+)>'): "role"
+}
+IMAGE_MEDIA_RE_PATTERNS = [re.compile(p, re.IGNORECASE) for p in IMAGE_MEDIA_PATTERNS]
+HEADER_COLON_REGEX = re.compile(r'^([^:]+):')
+
+@functools.lru_cache(maxsize=1024)
+def get_keyword_regex(keyword: str):
+    return re.compile(r'(?<!\w)' + re.escape(keyword) + r'(?!\w)')
 
 @dataclass
 class ResponseMetadata:
@@ -93,41 +105,62 @@ class ResponseMetadata:
     context_percent: str
     token_format: str
     timestamp: float
+    channel_id: int  # Added to track where the message lives
     thinking_process: str = ""
 
 
 class ResponseCache:
-    def __init__(self, ttl_seconds: int = 3600):
+    def __init__(self, bot, ttl_seconds: int = 3600):
         self._cache = {}
+        self.bot = bot
         self.ttl = ttl_seconds
 
-    def set(self, message_id: int, response_time: str, model: str, context: str, tokens: str, thinking_process: str = ""):
+    def set(self, message_id: int, response_time: str, model: str, context: str, tokens: str, channel_id: int,
+            thinking_process: str = ""):
         self._cache[message_id] = ResponseMetadata(
             response_time_str=response_time,
             model_name=model,
             context_percent=context,
             token_format=tokens,
             timestamp=time.time(),
+            channel_id=channel_id,
             thinking_process=thinking_process
         )
-        self._cleanup()
+        # Create a background task that actively wakes up after 1 hour
+        asyncio.create_task(self._track_expiry(message_id))
 
     def get(self, message_id: int) -> ResponseMetadata | None:
-        self._cleanup()
-        return self._cache.get(message_id)
+        # Check v.timestamp manually in case a task hasn't finished execution yet
+        metadata = self._cache.get(message_id)
+        if metadata and (time.time() - metadata.timestamp > self.ttl):
+            return None
+        return metadata
 
     def delete(self, message_id: int):
         if message_id in self._cache:
             del self._cache[message_id]
 
-    def _cleanup(self):
-        now = time.time()
-        expired_keys = [
-            k for k, v in self._cache.items()
-            if now - v.timestamp > self.ttl
-        ]
-        for k in expired_keys:
-            del self._cache[k]
+    async def _track_expiry(self, message_id: int):
+        await asyncio.sleep(self.ttl)
+
+        if message_id not in self._cache:
+            return
+
+        metadata = self._cache[message_id]
+
+        try:
+            channel = self.bot.get_channel(metadata.channel_id) or await self.bot.fetch_channel(metadata.channel_id)
+            if channel:
+                message = await channel.fetch_message(message_id)
+                await message.edit(view=ExpiredResponseView())
+        except discord.NotFound:
+            pass
+        except discord.Forbidden:
+            print(f"Lacking permissions to update expired view for message {message_id}")
+        except Exception as e:
+            print(f"Error updating expired view for message {message_id}: {e}")
+        finally:
+            self.delete(message_id)
 
 
 class ReportReasonModal(discord.ui.Modal, title="Report Response"):
@@ -185,30 +218,83 @@ class ReportReasonModal(discord.ui.Modal, title="Report Response"):
 
         await report_channel.send(embed=embed)
 
+
 class MainResponseView(discord.ui.View):
-    def __init__(self, cache, initial_time_str: str = "0.0s", timeout: float = 3600.0):
+    def __init__(self, cog, identifier, message_id: int | None, cache, initial_time_str: str = "0.0s",
+                 timeout: float = 3600.0):
         super().__init__(timeout=timeout)
+        self.cog = cog
+        self.identifier = identifier
+        self.message_id = message_id
         self.cache = cache
         self.children[0].label = f" {initial_time_str} "
+
+        if message_id:
+            self.check_retry_status()
+
+    def check_retry_status(self):
+        active_id = self.cog._active_responses.get(self.identifier)
+        metadata = self.cache.get(self.message_id)
+
+        is_latest = (self.message_id == active_id)
+        has_expired = False
+        if metadata:
+            # 5-minute absolute hard deadline threshold
+            has_expired = (time.time() - metadata.timestamp > 300)
+
+        if not is_latest or has_expired:
+            self.children[1].disabled = True
 
     @discord.ui.button(label="0.0s", style=discord.ButtonStyle.secondary, disabled=True, row=0)
     async def response_time(self, interaction: discord.Interaction, button: discord.ui.Button):
         pass
 
-    @discord.ui.button(label="Retry", style=discord.ButtonStyle.secondary, emoji=discord.PartialEmoji.from_str(retryemoji), row=0)
+    @discord.ui.button(label="Retry", style=discord.ButtonStyle.secondary,
+                       emoji=discord.PartialEmoji.from_str(retryemoji), row=0)
     async def retry(self, interaction: discord.Interaction, button: discord.ui.Button):
-        await interaction.response.defer()
+        active_id = self.cog._active_responses.get(self.identifier)
+        metadata = self.cache.get(interaction.message.id)
+
+        is_latest = (interaction.message.id == active_id)
+        has_expired = (time.time() - metadata.timestamp > 300) if metadata else True
+
+        if not is_latest or has_expired:
+            button.disabled = True
+            await interaction.response.edit_message(view=self)
+            await interaction.followup.send(
+                "This response is no longer the active head of the conversation history or has expired.",
+                ephemeral=True
+            )
+            return
+
+        button.disabled = True
+        await interaction.response.edit_message(view=self)
+
+        if not interaction.message.reference:
+            await interaction.followup.send("Cannot locate the original prompt reference.", ephemeral=True)
+            return
+
+        try:
+            user_msg = await interaction.channel.fetch_message(interaction.message.reference.message_id)
+        except Exception:
+            await interaction.followup.send("Could not retrieve the original prompt from channel history.",
+                                            ephemeral=True)
+            return
+
+        await self.cog.on_message(user_msg, retry_message=interaction.message)
 
     @discord.ui.button(emoji=discord.PartialEmoji.from_str(threedotemoji), style=discord.ButtonStyle.secondary, row=0)
     async def overflow(self, interaction: discord.Interaction, button: discord.ui.Button):
-        overflow_view = OverflowButtonView(cache=self.cache)
+        overflow_view = OverflowButtonView(cog=self.cog, identifier=self.identifier, cache=self.cache)
         overflow_view.update_layout_from_cache(interaction.message.id)
         await interaction.response.edit_message(view=overflow_view)
 
 
 class OverflowButtonView(discord.ui.View):
-    def __init__(self, cache, timeout: float = 3600.0):
+    def __init__(self, cog, identifier, cache, timeout: float = 3600.0):
         super().__init__(timeout=timeout)
+        self.cog = cog
+        self.identifier = identifier
         self.cache = cache
 
     def update_layout_from_cache(self, message_id: int):
@@ -227,7 +313,8 @@ class OverflowButtonView(discord.ui.View):
     async def token_stat(self, interaction: discord.Interaction, button: discord.ui.Button):
         pass
 
-    @discord.ui.button(label="Report Response", style=discord.ButtonStyle.danger, emoji=discord.PartialEmoji.from_str(reportemoji), row=1)
+    @discord.ui.button(label="Report Response", style=discord.ButtonStyle.danger,
+                       emoji=discord.PartialEmoji.from_str(reportemoji), row=1)
     async def report_response(self, interaction: discord.Interaction, button: discord.ui.Button):
         modal = ReportReasonModal(message_to_report=interaction.message)
         await interaction.response.send_modal(modal)
@@ -258,13 +345,30 @@ class OverflowButtonView(discord.ui.View):
                 ephemeral=True
             )
 
-    @discord.ui.button(label="Back", emoji=discord.PartialEmoji.from_str(backemoji), style=discord.ButtonStyle.secondary, row=0)
+    @discord.ui.button(label="Back", emoji=discord.PartialEmoji.from_str(backemoji),
+                       style=discord.ButtonStyle.secondary, row=0)
     async def back(self, interaction: discord.Interaction, button: discord.ui.Button):
         metadata = self.cache.get(interaction.message.id)
         time_str = metadata.response_time_str if metadata else "0.0s"
 
-        main_view = MainResponseView(cache=self.cache, initial_time_str=time_str)
+        main_view = MainResponseView(
+            cog=self.cog,
+            identifier=self.identifier,
+            message_id=interaction.message.id,
+            cache=self.cache,
+            initial_time_str=time_str
+        )
         await interaction.response.edit_message(view=main_view)
+
+class ExpiredResponseView(discord.ui.View):
+    def __init__(self, timeout: float | None = None):
+        super().__init__(timeout=timeout)
+
+    @discord.ui.button(label="Report Response", style=discord.ButtonStyle.danger,
+                       emoji=discord.PartialEmoji.from_str(reportemoji), row=0)
+    async def report_response(self, interaction: discord.Interaction, button: discord.ui.Button):
+        modal = ReportReasonModal(message_to_report=interaction.message)
+        await interaction.response.send_modal(modal)
 
 class AICog(commands.Cog):
     # Convert AI steps into status update messages
@@ -272,7 +376,7 @@ class AICog(commands.Cog):
 
     def __init__(self, bot):
         self.bot = bot
-        self.response_cache = ResponseCache(ttl_seconds=3600)
+        self.response_cache = ResponseCache(bot=self.bot, ttl_seconds=3600)
         self.message_history = {}
         self.last_activity = {}
         self.cooldowns = {}
@@ -281,6 +385,7 @@ class AICog(commands.Cog):
         self.google_emoji = "GOOGLE"
 
         self.chat_locks = {}
+        self._active_responses = {}
 
     async def _personality_worker(self, message: discord.Message, stop_event: asyncio.Event, mode: int = 0):
         # We fire up a fresh engine instance for this specific worker loop run!
@@ -399,7 +504,7 @@ class AICog(commands.Cog):
         )
 
         for _ in range(2):
-            val = re.sub(r'\\(?:mathbf|mathrm|text|boldsymbol|mathit|cal|mathbb|mathscr)\{([^{}]+)\}', r'\1', val)
+            val = LATEX_FONT_REGEX.sub(r'\1', val)
 
         replacements = {
             r'\cos': 'cos', r'\sin': 'sin', r'\tan': 'tan', r'\det': 'det',
@@ -722,10 +827,7 @@ class AICog(commands.Cog):
                             content_type = resp.content_type.lower()
 
 
-                    is_known_media_provider = any(
-                        re.search(pattern, url, re.IGNORECASE)
-                        for pattern in IMAGE_MEDIA_PATTERNS
-                    )
+                    is_known_media_provider = any(pattern.search(url) for pattern in IMAGE_MEDIA_RE_PATTERNS)
 
 
                     if content_type.startswith(('image/', 'video/')) or is_known_media_provider:
@@ -767,16 +869,9 @@ class AICog(commands.Cog):
         if not guild:
             return text
 
-        # TODO: precompile regexes
-        patterns = {
-            r'<@!?(\d+)>': "user",
-            r'<#(\d+)>': "channel",
-            r'<@&(\d+)>': "role"
-        }
-
         matches = []
-        for pattern, m_type in patterns.items():
-            for match in re.finditer(pattern, text):
+        for pattern, m_type in MENTION_PATTERNS.items():
+            for match in pattern.finditer(text):
                 matches.append((match.start(), match.end(), match.group(1), m_type))
 
         matches.sort()
@@ -880,8 +975,8 @@ User prompt:
             return False
         if ' ' in keyword:
             return keyword in line_lower
-        # TODO: precompile regex
-        return re.search(r'(?<!\w)' + re.escape(keyword) + r'(?!\w)', line_lower) is not None
+
+        return get_keyword_regex(keyword).search(line_lower) is not None
 
     def _derive_thinking_step(self, thinking_text: str) -> str:
         lines = [line.strip() for line in thinking_text.split('\n') if line.strip()]
@@ -896,8 +991,9 @@ User prompt:
                 if any(self._matches_thinking_keyword(line_lower, k) for k in keywords):
                     return step
 
-            if ":" in clean_line:
-                header = clean_line.split(":", 1)[0]
+            match_colon = HEADER_COLON_REGEX.match(clean_line)
+            if match_colon:
+                header = match_colon.group(1)
                 header = STRIP_MARKDOWN_REGEX.sub('', header).strip()
 
                 match_paren = PAREN_HEADER_REGEX.search(header)
@@ -933,7 +1029,7 @@ User prompt:
         return thought_text
 
     @commands.Cog.listener()
-    async def on_message(self, message):
+    async def on_message(self, message, retry_message = None):
         if message.author.bot:
             return
 
@@ -952,7 +1048,12 @@ User prompt:
 
         prompt = await self._replace_mentions(prompt, message.guild)
         channel_name = self.bot.get_channel(message.channel.id) or await self.bot.fetch_channel(message.channel.id)
-        prompt = f"USER's PROMPT (User's name is {message.author.display_name}, prompt sent at {message_timestamp} in Discord channel {channel_name}): {prompt.strip()}"
+        author_display_name = message.author.display_name
+        if message.guild and not isinstance(message.author, discord.Member):
+            member = message.guild.get_member(message.author.id) or await message.guild.fetch_member(message.author.id)
+            if member:
+                author_display_name = member.display_name
+        prompt = f"USER's PROMPT (User's name is {author_display_name}, prompt sent at {message_timestamp} in Discord channel {channel_name}): {prompt.strip()}\nEND OF USER PROMPT"
 
         if message.reference and message.reference.resolved:
             ref_msg = message.reference.resolved
@@ -973,7 +1074,11 @@ User prompt:
             return
 
         # Message is for Twilight!, generate response
-        queue_msg = await message.reply(f"## {self.loading_icon} Just a sec...\n\n", mention_author=False)
+        if retry_message:
+            queue_msg = retry_message
+            await queue_msg.edit(content=f"## {self.loading_icon} Just a sec...\n\n", view=None, embed=None)
+        else:
+            queue_msg = await message.reply(f"## {self.loading_icon} Just a sec...\n\n", mention_author=False)
         stop_event = asyncio.Event()
         worker_task = asyncio.create_task(self._personality_worker(queue_msg, stop_event, mode=0))
 
@@ -1070,7 +1175,7 @@ User prompt:
 
                 current_context = self._prepare_search_context(self.message_history[identifier] + [new_user_message])
 
-                max_retries = 6
+                max_retries = 4
                 retry_delay = 5
                 response = None
 
@@ -1155,7 +1260,15 @@ User prompt:
                                 response_text=clean_display_text
                             )
 
-                            view = MainResponseView(cache=self.response_cache, initial_time_str=response_time_str)
+                            self._active_responses[identifier] = queue_msg.id
+
+                            view = MainResponseView(
+                                cog=self,
+                                identifier=identifier,
+                                message_id=queue_msg.id,
+                                cache=self.response_cache,
+                                initial_time_str=response_time_str
+                            )
 
                             content, embeds = self._format_response_payload(
                                 clean_display_text,
@@ -1174,6 +1287,7 @@ User prompt:
                                 model=current_model or "Google Gemma 4 26B",
                                 context=context_percent,
                                 tokens=token_format,
+                                channel_id=message.channel.id,
                                 thinking_process=extracted_thinking
                             )
                         break
@@ -1205,7 +1319,7 @@ User prompt:
 
             except Exception as e:
 
-                await queue_msg.edit(content=f"""Error: Google AI Studio is currently unavailable or encountered a problem. Please try again later.\n> If the error message says "500 Internal Server Error", it is an error on our AI Provider's end i.e. Google AI Studio. Google makes this error message notoriously vague on purpose - it happens seemingly at random, and it's impossible to know what even caused it. Please re-try after a few seconds.\n\nError Message:\n```{e}```""")
+                await queue_msg.edit(content=f"""Error: Google AI Studio is currently unavailable or encountered a problem. Please try again later.\n> If the error message says "500 Internal Server Error", it is an error on our AI Provider's end i.e. Google AI Studio. Google makes this error message notoriously vague on purpose - it happens seemingly at random, and it's impossible to know what even caused it. Please re-try after a few seconds.\nError Message:\n```{e}```""")
                 return
 
             if message.attachments and uploaded_files:
@@ -1220,6 +1334,10 @@ User prompt:
                     image_context_text = "\n*[System Context: User uploaded an image or file but system has failed to generate a description for it]*"
             else:
                 image_context_text = ""
+
+            if retry_message and len(self.message_history[identifier]) >= 2:
+                self.message_history[identifier].pop()
+                self.message_history[identifier].pop()
 
             self.message_history[identifier].append(
                 types.Content(role="user", parts=[types.Part(text=prompt + image_context_text)])
@@ -1236,6 +1354,42 @@ User prompt:
         finally:
             chat_lock.release()
             stop_event.set()
+
+    @commands.Cog.listener()
+    async def on_message_edit(self, before: discord.Message, after: discord.Message):
+        if after.author.bot:
+            return
+
+
+        if before.content == after.content:
+            return
+
+        is_dm = after.guild is None
+        is_mentioned = self.bot.user in after.mentions
+
+        if not is_dm and not is_mentioned:
+            return
+
+        identifier = after.channel.id if is_dm else after.guild.id
+
+        target_response = None
+
+        active_id = self._active_responses.get(identifier)
+        if active_id:
+            try:
+                target_response = await after.channel.fetch_message(active_id)
+                if not (target_response.reference and target_response.reference.message_id == after.id):
+                    target_response = None
+            except discord.NotFound:
+                target_response = None
+            except Exception as e:
+                print(f"Error fetching target response for edit: {e}")
+                target_response = None
+
+        if not target_response:
+            return
+
+        await self.on_message(after, retry_message=target_response)
 
     clear = app_commands.Group(name="clear", description="Commands to clear Twilight's history.")
     @clear.command(
