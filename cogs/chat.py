@@ -1355,6 +1355,42 @@ User prompt:
             chat_lock.release()
             stop_event.set()
 
+    @commands.Cog.listener()
+    async def on_message_edit(self, before: discord.Message, after: discord.Message):
+        if after.author.bot:
+            return
+
+
+        if before.content == after.content:
+            return
+
+        is_dm = after.guild is None
+        is_mentioned = self.bot.user in after.mentions
+
+        if not is_dm and not is_mentioned:
+            return
+
+        identifier = after.channel.id if is_dm else after.guild.id
+
+        target_response = None
+
+        active_id = self._active_responses.get(identifier)
+        if active_id:
+            try:
+                target_response = await after.channel.fetch_message(active_id)
+                if not (target_response.reference and target_response.reference.message_id == after.id):
+                    target_response = None
+            except discord.NotFound:
+                target_response = None
+            except Exception as e:
+                print(f"Error fetching target response for edit: {e}")
+                target_response = None
+
+        if not target_response:
+            return
+
+        await self.on_message(after, retry_message=target_response)
+
     clear = app_commands.Group(name="clear", description="Commands to clear Twilight's history.")
     @clear.command(
         name="server",
