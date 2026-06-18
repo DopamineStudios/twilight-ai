@@ -2,10 +2,11 @@ from beacon import Bot
 import discord
 import logging
 from logging.handlers import RotatingFileHandler
-from config import TOKEN, LOGGING_DEBUG_MODE
+from config import TOKEN, LOGGING_DEBUG_MODE, PROXY_USERNAME, PROXY_PASSWORD
 import os
 import traceback
 import asyncio
+import urllib.parse
 
 if not TOKEN:
     raise SystemExit("ERROR: Set DISCORD_TOKEN in a .env in root folder.")
@@ -40,8 +41,9 @@ intents.members = True
 intents.dm_messages = True
 
 allowed_mentions = discord.AllowedMentions(replied_user=False)
-
-bot = Bot(command_prefix="!", intents=intents, minimal_cacheing=True, allowed_mentions=allowed_mentions, version_file="VERSION.txt", accent_colour=discord.Colour(0xbd6869))
+PROXY_PASSWORD = urllib.parse.quote_plus(PROXY_PASSWORD)
+proxy_url = f"http://{PROXY_USERNAME}:{PROXY_PASSWORD}@dc.oxylabs.io:8000"
+bot = Bot(command_prefix="!", intents=intents, minimal_cacheing=True, allowed_mentions=allowed_mentions, version_file="VERSION.txt", accent_colour=discord.Colour(0xbd6869), proxy=proxy_url)
 
 if __name__ == "__main__":
     async def main_async():
