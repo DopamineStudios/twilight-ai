@@ -31,19 +31,20 @@ from languages.english.statuses import StatusEngine, THINKING_STEP_CONVERSIONS
 client = genai.Client(api_key=gemini_api_key)
 
 """PRODUCTION EMOJIS"""
-"""reportemoji = "<:ReportEmoji:1515283638164521031>"
-#threedotemoji = "<:ThreedotEmoji:1515283624088436767>"
-#retryemoji = "<:RetryEmoji:1515283585123483688>"
-#backemoji = "<:BackEmoji:1515286702787395724>"
-#twilightloading = "<a:twilight_loading_icon:1506347831605198981>"
-#loadingdot = "<a:twilight_loading_dot:1506348237722878085>"""
+reportemoji = "<:ReportEmoji:1515283638164521031>"
+threedotemoji = "<:ThreedotEmoji:1515283624088436767>"
+retryemoji = "<:RetryEmoji:1515283585123483688>"
+backemoji = "<:BackEmoji:1515286702787395724>"
+twilightloading = "<a:twilight_loading_icon:1506347831605198981>"
+loadingdot = "<a:twilight_loading_dot:1506348237722878085>"
 
-reportemoji = "<:ReportEmoji:1516126283778756701>"
+"""TESTING BENCH EMOJIS"""
+"""reportemoji = "<:ReportEmoji:1516126283778756701>"
 threedotemoji = "<:ThreedotEmoji:1516126288182644940>"
 retryemoji = "<:RetryEmoji:1516126285775245352>"
 backemoji = "<:BackEmoji:1516126262265909388>"
 twilightloading = "<a:twilight_loading_icon:1516126476280398014>"
-loadingdot = "<a:loadingdot:1516126281719218297>"
+loadingdot = "<a:loadingdot:1516126281719218297>"""
 
 REPORT_CHANNEL=1516324617910878309
 
