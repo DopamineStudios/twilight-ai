@@ -2,7 +2,7 @@ from beacon import Bot
 import discord
 import logging
 from logging.handlers import RotatingFileHandler
-from config import TOKEN, LOGGING_DEBUG_MODE, PROXY_USERNAME, PROXY_PASSWORD
+from config import TOKEN, LOGGING_DEBUG_MODE, PROXY_USERNAME, PROXY_PASSWORD, init_prompt_watcher
 import os
 import traceback
 import asyncio
@@ -48,6 +48,7 @@ bot = Bot(command_prefix="!", intents=intents, minimal_cacheing=True, allowed_me
 if __name__ == "__main__":
     async def main_async():
         try:
+            init_prompt_watcher()
             async with bot:
                 await bot.start(TOKEN)
         except Exception as e:
@@ -56,3 +57,5 @@ if __name__ == "__main__":
 
 
     asyncio.run(main_async())
+
+### EOF: /twilight-ai/main.py ###
