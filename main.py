@@ -45,7 +45,7 @@ PROXY_PASSWORD = urllib.parse.quote_plus(PROXY_PASSWORD)
 proxy_url = f"http://{PROXY_USERNAME}:{PROXY_PASSWORD}@31.56.127.193:7684"
 async def on_shard_ready(shard_id: int):
     total_shards = bot.shard_count or len(bot.shards)
-    activity_name = f"✨ Listening to DMs and Mentions {shard_id}/{total_shards}"
+    activity_name = f"✨ DM or Mention me {shard_id}/{total_shards}"
 
     await bot.change_presence(
         activity=discord.Streaming(name=activity_name, url="https://www.twitch.tv/dopaminediscordbot"),
