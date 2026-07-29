@@ -1,4 +1,4 @@
-from beacon import Bot
+from beacon import BeaconAutoShardedBot
 import discord
 import logging
 from logging.handlers import RotatingFileHandler
@@ -42,8 +42,8 @@ intents.dm_messages = True
 
 allowed_mentions = discord.AllowedMentions(replied_user=False)
 PROXY_PASSWORD = urllib.parse.quote_plus(PROXY_PASSWORD)
-proxy_url = f"http://{PROXY_USERNAME}:{PROXY_PASSWORD}@dc.oxylabs.io:8000"
-bot = Bot(command_prefix="!", intents=intents, minimal_cacheing=True, allowed_mentions=allowed_mentions, version_file="VERSION.txt", accent_colour=discord.Colour(0xbd6869), proxy=proxy_url)
+proxy_url = f"http://{PROXY_USERNAME}:{PROXY_PASSWORD}@31.56.127.193:7684"
+bot = BeaconAutoShardedBot(command_prefix="!", intents=intents, minimal_caching=True, allowed_mentions=allowed_mentions, version_file="VERSION.txt", accent_colour=discord.Colour(0xbd6869), proxy=proxy_url)
 
 if __name__ == "__main__":
     async def main_async():
