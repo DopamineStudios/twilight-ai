@@ -365,7 +365,7 @@ class ExpiredResponseView(discord.ui.View):
     def __init__(self, timeout: float | None = None):
         super().__init__(timeout=timeout)
 
-    @discord.ui.button(label="Report Response", style=discord.ButtonStyle.danger,
+    @discord.ui.button(label="Report Response", style=discord.ButtonStyle.secondary,
                        emoji=discord.PartialEmoji.from_str(reportemoji), row=0)
     async def report_response(self, interaction: discord.Interaction, button: discord.ui.Button):
         modal = ReportReasonModal(message_to_report=interaction.message)
