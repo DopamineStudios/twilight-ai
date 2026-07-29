@@ -43,7 +43,15 @@ intents.dm_messages = True
 allowed_mentions = discord.AllowedMentions(replied_user=False)
 PROXY_PASSWORD = urllib.parse.quote_plus(PROXY_PASSWORD)
 proxy_url = f"http://{PROXY_USERNAME}:{PROXY_PASSWORD}@31.56.127.193:7684"
-bot = BeaconAutoShardedBot(command_prefix="!", intents=intents, minimal_caching=True, allowed_mentions=allowed_mentions, version_file="VERSION.txt", accent_colour=discord.Colour(0xbd6869), proxy=proxy_url)
+async def on_shard_ready(shard_id: int):
+    total_shards = bot.shard_count or len(bot.shards)
+    activity_name = f"✨ Listening to DMs and @ Mentions | {shard_id}/{total_shards}"
+
+    await bot.change_presence(
+        activity=discord.Streaming(name=activity_name, url="https://www.twitch.tv/dopaminediscordbot"),
+        shard_id=shard_id
+    )
+bot = BeaconAutoShardedBot(command_prefix="!", intents=intents, minimal_caching=True, allowed_mentions=allowed_mentions, version_file="VERSION.txt", accent_colour=discord.Colour(0xbd6869), proxy=proxy_url, on_shard_ready_callback=on_shard_ready, shard_count=4)
 
 if __name__ == "__main__":
     async def main_async():
