@@ -1152,7 +1152,7 @@ User prompt:
                     worker_task = asyncio.create_task(self._personality_worker(queue_msg, stop_event, mode=1))
                 elif target_tier in ['B', 'C']:
                     current_model = "Google Gemma 4 26B"
-                    level = "minimal" if target_tier == 'B' else "high"
+                    level = "minimal"
                     config_kwargs["thinking_config"] = types.ThinkingConfig(thinking_level=level)
 
 
