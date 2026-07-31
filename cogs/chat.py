@@ -14,10 +14,8 @@ from google.genai import types
 from config import system_prompt, gemini_api_key
 import random # used by _trim_to_tokens()
 import asyncio
-from beacon import beacon_commands, preconditions
+from beacon import preconditions
 from datetime import datetime, timezone
-from pylatexenc.latex2text import LatexNodes2Text
-import unicodeitplus
 import mimetypes
 from dataclasses import dataclass
 import io
@@ -38,7 +36,7 @@ backemoji = "<:BackEmoji:1515286702787395724>"
 twilightloading = "<a:twilight_loading_icon:1506347831605198981>"
 loadingdot = "<a:twilight_loading_dot:1506348237722878085>"
 
-"""TESTING BENCH EMOJIS"""
+"""TEST BENCH EMOJIS"""
 """reportemoji = "<:ReportEmoji:1516126283778756701>"
 threedotemoji = "<:ThreedotEmoji:1516126288182644940>"
 retryemoji = "<:RetryEmoji:1516126285775245352>"
@@ -492,227 +490,6 @@ class AICog(commands.Cog):
             else:
                 break
 
-    def clean_math_string(self, val: str) -> str:
-        if not val:
-            return val
-        val = re.sub(
-            r'\\frac\{([^{}]+)\}\{([^{}]+)\}',
-            lambda m: f"{m.group(1)}/{m.group(2)}" if len(m.group(1)) == 1 and len(
-                m.group(2)) == 1 else f"({m.group(1)})/({m.group(2)})",
-            val
-        )
-
-        for _ in range(2):
-            val = LATEX_FONT_REGEX.sub(r'\1', val)
-
-        replacements = {
-            r'\cos': 'cos', r'\sin': 'sin', r'\tan': 'tan', r'\det': 'det',
-            r'\cdot': ' · ', r'\times': ' × ', r'\approx': '≈',
-            r'\quad': ' ', r'\qquad': '  ',
-            r'\theta': 'θ', r'\alpha': 'α', r'\beta': 'β', r'\gamma': 'γ',
-            r'\pi': 'π', r'\phi': 'φ', r'\psi': 'ψ', r'\omega': 'ω',
-            r'\sigma': 'σ', r'\lambda': 'λ', r'\pm': '±', r'\neq': '≠',
-            r'\le': '≤', r'\ge': '≥', r'\infty': '∞',
-        }
-        for latex, uni in replacements.items():
-            val = val.replace(latex, uni)
-
-        try:
-            val = unicodeitplus.convert(val)
-        except Exception:
-            pass
-
-        val = LATEX_COMMAND_BRACES_REGEX.sub(r'\1', val)
-        val = LATEX_COMMAND_REGEX.sub('', val)
-
-        val = SPACED_EQUALS_REGEX.sub(' = ', val)
-        val = SPACED_PLUS_REGEX.sub(' + ', val)
-        val = SPACED_APPROX_REGEX.sub(' ≈ ', val)
-
-        superscript_map = {
-            '0': '⁰', '1': '¹', '2': '²', '3': '³', '4': '⁴',
-            '5': '⁵', '6': '⁶', '7': '⁷', '8': '⁸', '9': '⁹',
-            'T': 'ᵀ', 'n': 'ⁿ', 'x': 'ˣ', 'y': 'ʸ', 'i': 'ⁱ',
-            'j': 'ʲ', '+': '⁺', '-': '⁻', 'θ': 'ᶿ', 'α': 'ᵃ',
-            'β': 'ᵝ', 'γ': 'ᵞ', '(': '⁽', ')': '⁾', '=': '⁼'
-        }
-
-        val = SUPERSCRIPT_REGEX.sub(
-            lambda m: "".join(superscript_map.get(char, char) for char in (m.group(1) or m.group(2) or m.group(3))),
-            val
-        )
-
-        val = val.replace('{}', '')
-
-        return val.strip()
-
-    def format_matrix(self, env_type: str, body_content: str) -> list:
-        raw_rows = body_content.split(r'\\')
-        grid = []
-        for r in raw_rows:
-            if not r.strip() and len(raw_rows) > 1:
-                continue
-            raw_cols = r.split('&')
-            clean_cols = [self.clean_math_string(c) for c in raw_cols]
-            grid.append(clean_cols)
-
-        if not grid or not grid[0]:
-            return [""]
-
-        max_cols = max(len(row) for row in grid)
-        for row in grid:
-            while len(row) < max_cols:
-                row.append("")
-
-        col_widths = [0] * max_cols
-        for row in grid:
-            for idx, cell in enumerate(row):
-                if len(cell) > col_widths[idx]:
-                    col_widths[idx] = len(cell)
-
-        formatted_rows = []
-        for row in grid:
-            formatted_cells = []
-            for idx, cell in enumerate(row):
-                padded = cell.ljust(col_widths[idx])
-                formatted_cells.append(padded)
-            formatted_rows.append("  ".join(formatted_cells))
-
-        left_bracket, right_bracket = "", ""
-        if "vmatrix" in env_type:
-            left_bracket, right_bracket = "| ", " |"
-        elif "pmatrix" in env_type:
-            left_bracket, right_bracket = "( ", " )"
-        elif "bmatrix" in env_type:
-            left_bracket, right_bracket = "[ ", " ]"
-
-        if left_bracket or right_bracket:
-            return [f"{left_bracket}{row}{right_bracket}" for row in formatted_rows]
-        return formatted_rows
-
-    def _clean_latex(self, text: str) -> str:
-        if not text:
-            return text
-
-        code_blocks = []
-
-        def placeholder_code(match):
-            code_blocks.append(match.group(0))
-            return f"__CODE_BLOCK_PLACEHOLDER_{len(code_blocks) - 1}__"
-
-        current_text = CODE_BLOCK_REGEX.sub(placeholder_code, text)
-
-        display_math_blocks = []
-        def placeholder_display(match):
-            display_math_blocks.append(match.group(1))
-            return f"__DISPLAY_MATH_PLACEHOLDER_{len(display_math_blocks) - 1}__"
-
-        current_text = DISPLAY_MATH_REGEX.sub(placeholder_display, current_text)
-
-        inline_math_blocks = []
-        def placeholder_inline(match):
-            inline_math_blocks.append(match.group(1))
-            return f"__INLINE_MATH_PLACEHOLDER_{len(inline_math_blocks) - 1}__"
-
-        current_text = INLINE_MATH_REGEX.sub(placeholder_inline, current_text)
-
-        try:
-            current_text = LatexNodes2Text(keep_comments=True).latex_to_text(current_text)
-        except Exception:
-            pass
-
-        for i, raw_content in enumerate(display_math_blocks):
-            math_content = raw_content.strip()
-
-            math_content = LATEX_LEFT_RIGHT_REGEX.sub('', math_content)
-            math_content = LATEX_ALIGN_ALIGN_REGEX.sub('', math_content)
-
-            matrix_matches = list(MATRIX_ENV_REGEX.finditer(math_content))
-            if not matrix_matches and (r'\\' in math_content or '&' in math_content):
-                if '=' in math_content:
-                    prefix, matrix_part = math_content.split('=', 1)
-                    math_content = f"{prefix} = \\begin{{matrix}}{matrix_part}\\end{{matrix}}"
-                else:
-                    math_content = f"\\begin{{matrix}}{math_content}\\end{{matrix}}"
-
-            matrix_storage = {}
-            matrix_counter = [0]
-
-            def matrix_subber(m):
-                env_type = m.group(1)
-                body = m.group(2)
-                idx = matrix_counter[0]
-                matrix_counter[0] += 1
-
-                formatted_lines = self.format_matrix(env_type, body)
-                key = f"__MATRIX_BLOCK_{idx}__"
-                matrix_storage[key] = formatted_lines
-                return key
-
-            replaced_math = MATRIX_ENV_REGEX.sub(matrix_subber, math_content)
-            top_lines = replaced_math.split(r'\\')
-            final_block_lines = []
-
-            for line in top_lines:
-                if not line.strip():
-                    continue
-
-                tokens = re.split(r'(__MATRIX_BLOCK_\d+__)', line)
-                blocks_in_line = []
-
-                for token in tokens:
-                    if not token:
-                        continue
-                    if token in matrix_storage:
-                        blocks_in_line.append(matrix_storage[token])
-                    else:
-                        cleaned_piece = self.clean_math_string(token)
-                        if cleaned_piece:
-                            blocks_in_line.append([cleaned_piece])
-
-                if not blocks_in_line:
-                    continue
-
-                max_h = max(len(b) for b in blocks_in_line)
-                padded_blocks = []
-
-                for b in blocks_in_line:
-                    w = max(len(line_str) for line_str in b) if b else 0
-                    total_pad = max_h - len(b)
-                    top_pad = total_pad // 2
-                    bottom_pad = total_pad - top_pad
-
-                    pb = []
-                    for _ in range(top_pad):
-                        pb.append(" " * w)
-                    for line_str in b:
-                        pb.append(line_str.ljust(w))
-                    for _ in range(bottom_pad):
-                        pb.append(" " * w)
-                    padded_blocks.append(pb)
-
-                for h_idx in range(max_h):
-                    combined_row = ""
-                    for b_idx in range(len(padded_blocks)):
-                        part = padded_blocks[b_idx][h_idx]
-                        if b_idx > 0:
-                            combined_row += " "
-                        combined_row += part
-                    final_block_lines.append(combined_row)
-
-            final_math_display = "\n".join(final_block_lines)
-            wrapped_block = f"\n```text\n{final_math_display}\n```\n"
-            current_text = current_text.replace(f"__DISPLAY_MATH_PLACEHOLDER_{i}__", wrapped_block)
-
-        for i, raw_content in enumerate(inline_math_blocks):
-            final_inline = self.clean_math_string(raw_content)
-            current_text = current_text.replace(f"__INLINE_MATH_PLACEHOLDER_{i}__", final_inline)
-
-        for i, block in enumerate(code_blocks):
-            current_text = current_text.replace(f"__CODE_BLOCK_PLACEHOLDER_{i}__", block)
-
-        return current_text
-
     def _replace_markdown_separators(self, text: str) -> str:
         if not text:
             return text
@@ -737,18 +514,13 @@ class AICog(commands.Cog):
 
     def _format_response_payload(self, text, is_final=False, used_search=False):
         text = self._replace_markdown_separators(text)
-        if is_final:
-            text = self._clean_latex(text)
 
         color = discord.Colour.from_rgb(*self.bot.accent_colour)
         loading_prefix = self.loading_icon if not is_final else None
 
-        footer_text = f"\n\n{self.google_emoji} Used Google Search" if used_search and is_final else ""
-
         if len(text) > 8000:
             text = text[:8000] + "\n\n*(Discord limits reached!)*"
 
-        text += footer_text
         content = None
         embeds = []
 

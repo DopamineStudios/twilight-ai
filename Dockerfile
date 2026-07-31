@@ -13,9 +13,7 @@ RUN pip install --no-cache-dir \
     dotenv \
     openai \
     discord-beacon \
-    PyYAML \
-    pylatexenc \
-    unicodeitplus
+    PyYAML
 
 COPY . .
 

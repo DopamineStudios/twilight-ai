@@ -5,5 +5,3 @@ dotenv
 openai
 discord-beacon
 PyYAML
-pylatexenc
-unicodeitplus
