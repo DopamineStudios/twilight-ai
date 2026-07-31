@@ -48,10 +48,8 @@ loadingdot = "<a:loadingdot:1516126281719218297>"""
 
 REPORT_CHANNEL=1516324617910878309
 
-JUDGE_MODEL = "models/gemma-4-26b-a4b-it"
-GENERALIST_MODEL = "models/gemma-4-26b-a4b-it"
-EXPERT_MODEL = "models/gemma-4-26b-a4b-it"
-SEARCH_MODEL = "models/gemma-4-31b-it"
+MAIN_MODEL = "models/gemma-4-26b-a4b-it"
+IMAGE_DESCRIBER_MODEL = "models/gemma-4-31b-it"
 MD_SEPARATOR = "𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖𝄖"
 
 # PRE-COMPILING REGEX PATTERNS
@@ -427,7 +425,7 @@ class AICog(commands.Cog):
             combined_payload = prompt_text + response_text + "".join([str(msg) for msg in history_list])
 
             token_count_resp = client.models.count_tokens(
-                model=GENERALIST_MODEL,
+                model=MAIN_MODEL,
                 contents=combined_payload
             )
             total_tokens = token_count_resp.total_tokens
@@ -921,55 +919,6 @@ class AICog(commands.Cog):
                 sanitized_history.append(types.Content(role=content.role, parts=clean_parts))
         return sanitized_history
 
-    async def _get_routing_tier(self, user_prompt, queue_msg=None):
-
-        return 'C'
-        judge_prompt = f"""<system_prompt> Is this request:
-(A) Casual greeting or simple task,
-(B) Advanced task,
-(C) Complex logic/coding/creative writing,
-Respond with ONLY a single letter: A, B, or C.</system_prompt> 
-
-User prompt:
-{user_prompt}"""
-        max_retries = 3
-        retry_delay = 2
-        response = None
-
-        for attempt in range(max_retries):
-            try:
-                config = types.GenerateContentConfig(
-                    thinking_config=types.ThinkingConfig(
-                        thinking_level="minimal"
-                    )
-                )
-                resp = await client.aio.models.generate_content(
-                    model=JUDGE_MODEL,
-                    contents=judge_prompt,
-                    config=config
-                )
-                tier = resp.text.strip().upper()
-                for choice in ['C', 'B', 'A']:
-                    if choice in tier: return choice
-
-                return 'B'
-
-            except Exception as e:
-                is_server_error = "500" in str(e) or "internal" in str(e).lower()
-
-                if is_server_error and attempt < max_retries - 1:
-                    self.bot.logger.warning(
-                        f"Attempt {attempt + 1} of judgement stage failed with 500 error. Retrying in {retry_delay}s...")
-                    await asyncio.sleep(retry_delay)
-                    retry_delay *= 2
-                    continue
-
-                else:
-                    if queue_msg:
-                        await queue_msg.edit(content=
-                                             "I'm having trouble reaching the servers! This is usually a problem on Google's end. Please try again in a few seconds.")
-                    raise e
-
     def _matches_thinking_keyword(self, line_lower: str, keyword: str) -> bool:
         keyword = keyword.strip()
         if not keyword:
@@ -1095,7 +1044,6 @@ User prompt:
 
         chat_lock = self._get_lock(identifier)
         await chat_lock.acquire()
-        current_model = None
 
         try:
             start_generation_time = time.time()
@@ -1103,7 +1051,6 @@ User prompt:
                 self._manage_history(identifier)
 
                 used_search = False
-                search_query = None
                 start_time = time.time()
                 uploaded_files = await self._handle_attachments(message.attachments)
 
@@ -1120,7 +1067,6 @@ User prompt:
 
                 new_user_message = types.Content(role="user", parts=new_user_parts)
 
-                image_analysis = False
                 try:
                     if message.attachments:
                         try:
@@ -1128,32 +1074,20 @@ User prompt:
                             await worker_task
                         except Exception as e:
                             print(e)
-                        target_tier = 'C'
 
                         await queue_msg.edit(content=f"## {self.loading_icon} Analysing...")
-                        image_analysis = True
                         stop_event = asyncio.Event()
                         worker_task = asyncio.create_task(self._personality_worker(queue_msg, stop_event, mode=3))
-                    else:
-                        target_tier = await self._get_routing_tier(prompt, queue_msg)
 
                 except Exception as e:
                     print(e)
-                    target_tier = 'B'
-                active_model_name = SEARCH_MODEL if target_tier == 'D' else EXPERT_MODEL
 
                 config_kwargs = {}
 
-                if target_tier == 'D':
-                    current_model = "Google Gemma 4 31B"
-                    config_kwargs["tools"] = [types.Tool(google_search=types.GoogleSearch())]
-                    await queue_msg.edit(content=f"## {self.loading_icon} Using Google Search...")
-                    stop_event = asyncio.Event()
-                    worker_task = asyncio.create_task(self._personality_worker(queue_msg, stop_event, mode=1))
-                elif target_tier in ['B', 'C']:
-                    current_model = "Google Gemma 4 26B"
-                    level = "minimal"
-                    config_kwargs["thinking_config"] = types.ThinkingConfig(thinking_level=level)
+
+                current_model = "Google Gemma 4 26B"
+                level = "minimal"
+                config_kwargs["thinking_config"] = types.ThinkingConfig(thinking_level=level)
 
 
                 now_utc = datetime.now(timezone.utc)
@@ -1186,7 +1120,7 @@ User prompt:
                         full_thinking = ""
                         citations_list = []
                         response = await client.aio.models.generate_content_stream(
-                            model=active_model_name,
+                            model=MAIN_MODEL,
                             contents=current_context,
                             config=gen_config
                         )
@@ -1305,7 +1239,7 @@ User prompt:
                         if "quota" in str(e).lower() or "search" in str(e).lower():
                             gen_config.tools = None
                             response = await client.aio.models.generate_content_stream(
-                                model=active_model_name,
+                                model=MAIN_MODEL,
                                 contents=current_context,
                                 config=gen_config
                             )
@@ -1326,7 +1260,7 @@ User prompt:
             if message.attachments and uploaded_files:
                 try:
                     desc_resp = await client.aio.models.generate_content(
-                        model=SEARCH_MODEL,
+                        model=IMAGE_DESCRIBER_MODEL,
                         contents=uploaded_files + [types.Part(
                             text="Describe this image or file in one concise sentence for conversation history context for an AI.")]
                     )
@@ -1347,7 +1281,7 @@ User prompt:
             self.message_history[identifier].append(
                 types.Content(role="model", parts=[types.Part(text=self._replace_markdown_separators(full_content))])
             )
-            await self._trim_to_tokens(identifier, active_model_name, gen_config, max_tokens=64000)
+            await self._trim_to_tokens(identifier, MAIN_MODEL, gen_config, max_tokens=64000)
 
             generation_time = time.time() - start_time
             self.cooldowns[identifier] = (time.time(), (generation_time * 0.3) + 10.5)
