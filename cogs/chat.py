@@ -455,6 +455,47 @@ class AICog(commands.Cog):
         if identifier not in self.message_history:
             self.message_history[identifier] = []
 
+    async def _compact_multimodal_history(self, identifier: int, keep_recent_turns: int = 3):
+        """
+        Multimodal History Compaction:
+        Keeps raw file/vision objects in memory for the most recent N turns (for full visual follow-up quality).
+        Converts raw files in older turns into lightweight text summaries to prevent 48-hour URI expirations & context bloat.
+        """
+        history = self.message_history.get(identifier, [])
+        if not history:
+            return
+
+        keep_entries_count = keep_recent_turns * 2
+        compaction_threshold = max(0, len(history) - keep_entries_count)
+
+        for idx in range(compaction_threshold):
+            content = history[idx]
+            if content.role != "user":
+                continue
+
+            file_parts = [
+                part for part in content.parts
+                if hasattr(part, 'file_data') or hasattr(part, 'inline_data') or (hasattr(part, 'uri') and part.uri)
+            ]
+
+            if not file_parts:
+                continue
+
+            try:
+                desc_resp = await client.aio.models.generate_content(
+                    model=IMAGE_DESCRIBER_MODEL,
+                    contents=file_parts + [types.Part(
+                        text="Describe this image or file in one concise sentence for conversation history context for an AI.")]
+                )
+                summary_text = f"\n*[System History Context: Attachment contained: {desc_resp.text.strip()}]*"
+            except Exception:
+                summary_text = "\n*[System History Context: Attachment processed in past turn]*"
+
+            text_parts = [part.text for part in content.parts if hasattr(part, 'text') and part.text]
+            combined_text = "\n".join(text_parts) + summary_text
+
+            history[idx] = types.Content(role="user", parts=[types.Part(text=combined_text)])
+
     async def _trim_to_tokens(self, identifier, active_model_name, gen_config, max_tokens: int):
 
         if identifier not in self.message_history or not self.message_history[identifier]:
@@ -684,7 +725,7 @@ class AICog(commands.Cog):
             for part in content.parts:
                 if hasattr(part, 'text') and part.text:
                     clean_parts.append(types.Part(text=part.text))
-                elif hasattr(part, 'file_data') or hasattr(part, 'inline_data'):
+                elif hasattr(part, 'file_data') or hasattr(part, 'inline_data') or (hasattr(part, 'uri') and part.uri):
                     clean_parts.append(part)
 
             if clean_parts:
@@ -1029,30 +1070,18 @@ class AICog(commands.Cog):
                 await queue_msg.edit(content=f"""Error: Google AI Studio is currently unavailable or encountered a problem. Please try again later.\n> If the error message says "500 Internal Server Error", it is an error on our AI Provider's end i.e. Google AI Studio. Google makes this error message notoriously vague on purpose - it happens seemingly at random, and it's impossible to know what even caused it. Please re-try after a few seconds.\nError Message:\n```{e}```""")
                 return
 
-            if message.attachments and uploaded_files:
-                try:
-                    desc_resp = await client.aio.models.generate_content(
-                        model=IMAGE_DESCRIBER_MODEL,
-                        contents=uploaded_files + [types.Part(
-                            text="Describe this image or file in one concise sentence for conversation history context for an AI.")]
-                    )
-                    image_context_text = f"\n*[System Context: User uploaded an image or file showing: {desc_resp.text.strip()}]*"
-                except Exception:
-                    image_context_text = "\n*[System Context: User uploaded an image or file but system has failed to generate a description for it]*"
-            else:
-                image_context_text = ""
-
             if retry_message and len(self.message_history[identifier]) >= 2:
                 self.message_history[identifier].pop()
                 self.message_history[identifier].pop()
 
-            self.message_history[identifier].append(
-                types.Content(role="user", parts=[types.Part(text=prompt + image_context_text)])
-            )
+            self.message_history[identifier].append(new_user_message)
 
             self.message_history[identifier].append(
                 types.Content(role="model", parts=[types.Part(text=self._replace_markdown_separators(full_content))])
             )
+
+            await self._compact_multimodal_history(identifier, keep_recent_turns=3)
+
             await self._trim_to_tokens(identifier, MAIN_MODEL, gen_config, max_tokens=64000)
 
             generation_time = time.time() - start_time
