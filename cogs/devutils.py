@@ -18,10 +18,11 @@ class DevUtils(commands.Cog):
         ]
 
         view = ViewPaginator(
+            user=interaction.user,
             title=f"Server List ({len(guilds)} total)",
             data=data,
             per_page=10,
-            color=discord.Color(0xbd6869)
+            colour=discord.Color(0xbd6869)
         )
 
         await interaction.response.send_message(
