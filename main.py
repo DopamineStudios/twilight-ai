@@ -51,7 +51,7 @@ async def on_shard_ready(shard_id: int):
         activity=discord.Streaming(name=activity_name, url="https://www.twitch.tv/dopaminediscordbot"),
         shard_id=shard_id
     )
-bot = BeaconAutoShardedBot(command_prefix="!", intents=intents, minimal_caching=True, allowed_mentions=allowed_mentions, version_file="VERSION.txt", accent_colour=discord.Colour(0xbd6869), proxy=proxy_url, on_shard_ready_callback=on_shard_ready, shard_count=4)
+bot = BeaconAutoShardedBot(command_prefix="!", intents=intents, minimal_caching=True, allowed_mentions=allowed_mentions, version_file="VERSION.txt", accent_colour=discord.Colour(0xbd6869), on_shard_ready_callback=on_shard_ready)
 
 if __name__ == "__main__":
     async def main_async():
